@@ -1,11 +1,13 @@
+use std::time::Duration;
+type EuclidianDist = f64;
 pub struct SeperateConf {
-    pub distance: f32, // meter
-    pub time: u32,     // seconds
+    pub distance: EuclidianDist, // meter
+    pub time: Duration,     // seconds
 }
 
 pub struct SeperateConfBuilder {
-    distance: Option<f32>,
-    time: Option<u32>,
+    distance: Option<EuclidianDist>,
+    time: Option<Duration>,
 }
 
 impl SeperateConfBuilder {
@@ -16,18 +18,18 @@ impl SeperateConfBuilder {
         }
     }
 
-    pub fn distance(&mut self, distance: f32) {
+    pub fn distance(&mut self, distance: EuclidianDist) {
         self.distance = Some(distance)
     }
 
-    pub fn time(&mut self, time: u32) {
+    pub fn time(&mut self, time: Duration) {Ë
         self.time = Some(time)
     }
 
     pub fn build(&self) -> SeperateConf {
         SeperateConf {
             distance: self.distance.unwrap_or(1000.0),
-            time: self.time.unwrap_or(60), // Should be set to whatever we find to be the best value.
+            time: self.time.unwrap_or(Duration::from_secs(60)), // Should be set to whatever we find to be the best value.
         }
     }
 }
