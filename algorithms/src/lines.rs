@@ -2,7 +2,7 @@ use std::time::Duration;
 type EuclidianDist = f64;
 pub struct SeperateConf {
     pub distance: EuclidianDist, // meter
-    pub time: Duration,     // seconds
+    pub time: Duration,
 }
 
 pub struct SeperateConfBuilder {
@@ -22,7 +22,7 @@ impl SeperateConfBuilder {
         self.distance = Some(distance)
     }
 
-    pub fn time(&mut self, time: Duration) {Ë
+    pub fn time(&mut self, time: Duration) {
         self.time = Some(time)
     }
 
