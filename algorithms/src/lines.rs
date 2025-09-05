@@ -1,5 +1,5 @@
 use std::time::Duration;
-type EuclidianDist = f64;
+type EuclidianDist = f32;
 pub struct SeperateConf {
     pub distance: EuclidianDist, // meter
     pub time: Duration,
