@@ -1,26 +1,31 @@
-use geo_traits::{GeometryTrait, GeometryType, LineStringTrait, UnimplementedGeometryCollection, UnimplementedLine, UnimplementedMultiLineString, UnimplementedMultiPoint, UnimplementedMultiPolygon, UnimplementedPolygon, UnimplementedRect, UnimplementedTriangle};
+use geo_traits::{
+    GeometryTrait, GeometryType, LineStringTrait, UnimplementedGeometryCollection,
+    UnimplementedLine, UnimplementedMultiLineString, UnimplementedMultiPoint,
+    UnimplementedMultiPolygon, UnimplementedPolygon, UnimplementedRect, UnimplementedTriangle,
+};
 
 use crate::types::coordm::CoordM;
 use crate::types::pointm::PointM;
 
-#[derive(Debug,Clone,PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct LineStringM(Vec<CoordM>);
 
-impl LineStringM{}
+impl LineStringM {}
 
-impl TryFrom<Vec<CoordM>> for LineStringM{
+impl TryFrom<Vec<CoordM>> for LineStringM {
     type Error = super::error::Error;
 
     fn try_from(value: Vec<CoordM>) -> Result<Self, Self::Error> {
         match value.len() {
-            1 => Err(super::error::Error::InvalidLinestring),
-            _ => {Ok(LineStringM(value))},
+            1 => Err(super::error::Error::NumPoints), //TODO verify that points are temporally ordered
+            _ => Ok(LineStringM(value)),
         }
     }
 }
 
-impl LineStringTrait for LineStringM{
-    type CoordType<'a> = CoordM
+impl LineStringTrait for LineStringM {
+    type CoordType<'a>
+        = CoordM
     where
         Self: 'a;
 
@@ -36,8 +41,7 @@ impl LineStringTrait for LineStringM{
         }
     }
 }
-
-impl GeometryTrait for LineStringM{
+impl GeometryTrait for LineStringM {
     type T = f64;
 
     type PointType<'a>
@@ -110,5 +114,51 @@ impl GeometryTrait for LineStringM{
         Self::LineType<'_>,
     > {
         GeometryType::LineString(self)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use geo_traits::CoordTrait;
+    use geo_traits::{GeometryTrait,LineStringTrait};
+    use hex::encode;
+
+    use wkb::reader::GeometryType;
+    use wkb::writer::WriteOptions;
+    use wkb::writer::write_line_string;
+    use wkb::reader::read_wkb;
+
+    use crate::types::coordm::CoordM;
+    use crate::types::linestringm::LineStringM;
+
+    #[test]
+    fn writer() {
+        let mut output: Vec<u8> = Vec::new();
+
+        let coords: Vec<CoordM> = [(1.0, 2.0, 0.0), (2.0, 3.0, 1.0), (3.0, 4.0, 2.0)]
+            .map(|f| f.into())
+            .to_vec();
+        let ls = LineStringM::try_from(coords.clone()).unwrap();
+        let _ = write_line_string(
+            &mut output,
+            &ls,
+            &WriteOptions {
+                endianness: wkb::Endianness::LittleEndian,
+            },
+        );
+
+        let hexstring = encode(&output); // should be parsable by wkb reader tools online
+        // dbg!(hexstring); // https://wkbrew.tszheichoi.com/
+        let input = read_wkb(&output).unwrap();
+        assert_eq!(input.geometry_type(),GeometryType::LineString);
+        let ls = match input.as_type() {
+            geo_traits::GeometryType::LineString(ls) => {ls},
+            _ => unreachable!(),
+        };
+        assert_eq!(ls.num_coords(),3);
+        let c = ls.coords().map(|f|CoordM{ x: f.x(), y: f.y(), m: f.nth_or_panic(2) }).collect::<Vec<_>>();
+        assert_eq!(&coords,&c);
+
+        assert!(false)
     }
 }
