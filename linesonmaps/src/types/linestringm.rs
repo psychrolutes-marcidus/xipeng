@@ -1,10 +1,11 @@
 use geo_traits::{
-    GeometryTrait, GeometryType, LineStringTrait, UnimplementedGeometryCollection,
+    CoordTrait, GeometryTrait, GeometryType, LineStringTrait, UnimplementedGeometryCollection,
     UnimplementedLine, UnimplementedMultiLineString, UnimplementedMultiPoint,
     UnimplementedMultiPolygon, UnimplementedPolygon, UnimplementedRect, UnimplementedTriangle,
 };
 
 use crate::types::coordm::CoordM;
+use crate::types::error::Error;
 use crate::types::pointm::PointM;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -19,6 +20,30 @@ impl TryFrom<Vec<CoordM>> for LineStringM {
         match value.len() {
             1 => Err(super::error::Error::NumPoints), //TODO verify that points are temporally ordered
             _ => Ok(LineStringM(value)),
+        }
+    }
+}
+
+impl TryFrom<wkb::reader::Wkb<'_>> for LineStringM {
+    type Error = super::error::Error;
+
+    fn try_from(value: wkb::reader::Wkb<'_>) -> Result<Self, Self::Error> {
+        match value.as_type() {
+            geo_traits::GeometryType::LineString(ls) => {
+                let coords = ls
+                    .coords()
+                    .map(|c| {
+                        Some(CoordM {
+                            x: c.x(),
+                            y: c.y(),
+                            m: c.nth(2)?,
+                        })
+                    })
+                    .collect::<Option<Vec<_>>>()
+                    .ok_or(Error::Dimension)?;
+                Ok(LineStringM(coords))
+            }
+            _ => Err(super::error::Error::IncompatibleType),
         }
     }
 }
@@ -120,13 +145,13 @@ impl GeometryTrait for LineStringM {
 #[cfg(test)]
 mod tests {
     use geo_traits::CoordTrait;
-    use geo_traits::{GeometryTrait,LineStringTrait};
+    use geo_traits::{GeometryTrait, LineStringTrait};
     use hex::encode;
 
     use wkb::reader::GeometryType;
+    use wkb::reader::read_wkb;
     use wkb::writer::WriteOptions;
     use wkb::writer::write_line_string;
-    use wkb::reader::read_wkb;
 
     use crate::types::coordm::CoordM;
     use crate::types::linestringm::LineStringM;
@@ -150,14 +175,21 @@ mod tests {
         let hexstring = encode(&output); // should be parsable by wkb reader tools online
         // dbg!(hexstring); // https://wkbrew.tszheichoi.com/
         let input = read_wkb(&output).unwrap();
-        assert_eq!(input.geometry_type(),GeometryType::LineString);
+        assert_eq!(input.geometry_type(), GeometryType::LineString);
         let ls = match input.as_type() {
-            geo_traits::GeometryType::LineString(ls) => {ls},
+            geo_traits::GeometryType::LineString(ls) => ls,
             _ => unreachable!(),
         };
-        assert_eq!(ls.num_coords(),3);
-        let c = ls.coords().map(|f|CoordM{ x: f.x(), y: f.y(), m: f.nth_or_panic(2) }).collect::<Vec<_>>();
-        assert_eq!(&coords,&c);
+        assert_eq!(ls.num_coords(), 3);
+        let c = ls
+            .coords()
+            .map(|f| CoordM {
+                x: f.x(),
+                y: f.y(),
+                m: f.nth_or_panic(2),
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(&coords, &c);
 
         assert!(false)
     }
