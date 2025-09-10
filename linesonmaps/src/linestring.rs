@@ -11,6 +11,12 @@ pub struct CoordM {
 
 impl CoordM {}
 
+impl From<(f64,f64,f64)> for CoordM{
+    fn from((first,second,third): (f64,f64,f64)) -> Self {
+        CoordM { x: first, y: second, m: third }
+    }
+}
+
 impl CoordTrait for CoordM {
     type T = f64;
 
@@ -41,6 +47,17 @@ pub struct PointM {
 }
 
 impl PointM {}
+
+impl From<(f64,f64,f64)> for PointM {
+    fn from((first,second,third): (f64,f64,f64)) -> Self {
+        PointM {coord: CoordM { x: first, y: second, m: third }}
+    }
+}
+impl From<CoordM> for PointM{
+    fn from(value: CoordM) -> Self {
+        PointM { coord: value }
+    }
+}
 
 //wth is this
 impl GeometryTrait for PointM {
@@ -133,6 +150,16 @@ impl PointTrait for PointM {
 
 #[derive(Debug,Clone,PartialEq)]
 pub struct LineStringM(Vec<CoordM>);
+
+impl LineStringM{}
+
+impl TryFrom<Vec<CoordM>> for LineStringM{
+    type Error = (); //TODO
+
+    fn try_from(value: Vec<CoordM>) -> Result<Self, Self::Error> {
+        todo!()
+    }
+}
 
 impl LineStringTrait for LineStringM{
     type CoordType<'a> = CoordM

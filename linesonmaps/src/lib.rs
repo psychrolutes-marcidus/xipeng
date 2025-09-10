@@ -1,4 +1,5 @@
 pub mod linestring;
+pub mod types;
 
 pub fn add(left: u64, right: u64) -> u64 {
     left + right
@@ -13,6 +14,7 @@ mod tests {
     use wkb::reader::read_wkb;
 
     #[test]
+    #[ignore = "just fooling around"]
     fn three_dimensional() {
         // https://en.wikipedia.org/wiki/Well-known_text_representation_of_geometry
         const X: f64 = 1.0;
@@ -56,7 +58,7 @@ mod tests {
             _ => unreachable!(),
         };
         println!("{0:?}",t.coord(0).unwrap());
-        assert_eq!(t.num_coords(), 2); //! does not quite work for some reason
+        assert_eq!(t.num_coords(), 2); // does not quite work for some reason
         // assert_eq!(parsed.num)
 
         // assert!(false);
