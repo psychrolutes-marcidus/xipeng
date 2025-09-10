@@ -11,7 +11,15 @@ use crate::types::pointm::PointM;
 #[derive(Debug, Clone, PartialEq)]
 pub struct LineStringM(Vec<CoordM>);
 
-impl LineStringM {}
+impl LineStringM {
+    pub fn new(coords: Vec<CoordM>) -> Option<LineStringM> {
+        if coords.iter().map(|f| f.m).is_sorted() && coords.len() != 1 {
+            Some(LineStringM(coords))
+        } else {
+            None
+        }
+    }
+}
 
 impl TryFrom<Vec<CoordM>> for LineStringM {
     type Error = super::error::Error;

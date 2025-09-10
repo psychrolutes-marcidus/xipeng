@@ -2,6 +2,7 @@ use geo_traits::{GeometryTrait, PointTrait, UnimplementedGeometryCollection, Uni
 
 use crate::types::coordm::CoordM;
 
+///largely similar to a [`CoordM`], but distinctions are made in libraries, so i am going to as well :)
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PointM {
     pub coord: CoordM,

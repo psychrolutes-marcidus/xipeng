@@ -19,6 +19,7 @@ impl From<(f64, f64, f64)> for CoordM {
         }
     }
 }
+
 impl TryFrom<wkb::reader::Wkb<'_>> for CoordM {
     type Error = super::error::Error;
 
