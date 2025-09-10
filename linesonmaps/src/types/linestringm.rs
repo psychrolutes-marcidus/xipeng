@@ -9,10 +9,13 @@ pub struct LineStringM(Vec<CoordM>);
 impl LineStringM{}
 
 impl TryFrom<Vec<CoordM>> for LineStringM{
-    type Error = (); //TODO
+    type Error = super::error::Error;
 
     fn try_from(value: Vec<CoordM>) -> Result<Self, Self::Error> {
-        todo!()
+        match value.len() {
+            1 => Err(super::error::Error::InvalidLinestring),
+            _ => {Ok(LineStringM(value))},
+        }
     }
 }
 
