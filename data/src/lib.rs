@@ -2,6 +2,7 @@ use serde::Deserialize;
 
 use chrono::prelude::*;
 
+pub mod tables;
 
 #[derive(Debug, Deserialize)]
 pub struct CsvData {
@@ -32,3 +33,5 @@ pub struct CsvData {
     pub c: Option<u16>,
     pub d: Option<u16>,
 }
+
+
