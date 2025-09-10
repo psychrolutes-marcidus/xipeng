@@ -56,7 +56,7 @@ impl CoordTrait for CoordM {
         match n {
             0 => self.x,
             1 => self.y,
-            2 => (self.m),
+            2 => self.m,
             e => panic!("tried to access dimension {e} in 3-dimensional coordinate"),
         }
     }

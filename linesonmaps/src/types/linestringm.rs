@@ -173,7 +173,7 @@ mod tests {
         );
 
         let hexstring = encode(&output); // should be parsable by wkb reader tools online
-        // dbg!(hexstring); // https://wkbrew.tszheichoi.com/
+        dbg!(hexstring); // https://wkbrew.tszheichoi.com/
         let input = read_wkb(&output).unwrap();
         assert_eq!(input.geometry_type(), GeometryType::LineString);
         let ls = match input.as_type() {
@@ -190,7 +190,17 @@ mod tests {
             })
             .collect::<Vec<_>>();
         assert_eq!(&coords, &c);
+    }
 
-        assert!(false)
+    #[test]
+    fn to_linestringM() {
+        let hexstring = "01d207000003000000000000000000f03f0000000000000040000000000000000000000000000000400000000000000840000000000000f03f000000000000084000000000000010400000000000000040";
+
+        let bytea = hex::decode(hexstring).unwrap();
+
+        let wkb = read_wkb(&bytea).unwrap();
+        let lsm = LineStringM::try_from(wkb);
+        assert!(lsm.is_ok());
+        // dbg!(lsm.unwrap());
     }
 }
