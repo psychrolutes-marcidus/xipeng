@@ -1,7 +1,6 @@
 use super::*;
 
-
-type CogType = f32
+type CogType = f32;
 
 pub struct Cog {
     pub mmsi: Vec<MMSIType>,
@@ -21,7 +20,12 @@ impl Cog {
 
 impl Cog {
     pub fn search_by_key(&self, mmsi: MMSIType, time: TimeType) -> Result<CogType, TabelError> {
-        let index = self.mmsi.into_iter().zip(self.time.into_iter()).enumerate().filter(|(_, (m,t))| *m == mmsi && *t == time).map(|(i, _)| i).last().ok_or(TabelError::MissingKey)?;
+        let index = self
+            .mmsi
+            .iter()
+            .zip(self.time.iter())
+            .position(|(m, t)| *m == mmsi && *t == time)
+            .ok_or(TabelError::MissingKey)?;
 
         Ok(self.cog[index])
     }
