@@ -144,6 +144,7 @@ impl LineStringTrait for LineStringM{
     }
 
     unsafe fn coord_unchecked(&self, i: usize) -> Self::CoordType<'_> {
+        // ¬(i also like to live dangerously)
         match i <= self.0.len() {
             true => self.0[i],
             false => panic!("u sux"), //TODO: better error message
