@@ -1,9 +1,11 @@
 use super::*;
 
+pub type SogType = f32;
+
 pub struct Sog {
-    pub mmsi: Vec<u64>,
-    pub time: Vec<NaiveDateTime>,
-    pub sog: Vec<f32>,
+    pub mmsi: Vec<MMSIType>,
+    pub time: Vec<TimeType>,
+    pub sog: Vec<SogType>,
 }
 
 impl Sog {
@@ -13,5 +15,18 @@ impl Sog {
             time: Vec::new(),
             sog: Vec::new(),
        }
+    }
+}
+
+impl Sog {
+    pub fn search_by_key(&self, mmsi: MMSIType, time: TimeType) -> Result<SogType, TabelError> {
+        let index = self
+            .mmsi
+            .iter()
+            .zip(self.time.iter())
+            .position(|(m, t)| *m == mmsi && *t == time)
+            .ok_or(TabelError::MissingKey)?;
+
+        Ok(self.sog[index])
     }
 }

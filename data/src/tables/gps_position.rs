@@ -22,7 +22,7 @@ impl GPSPosition {
 
 impl GPSPosition {
     pub fn search_by_key(&self, mmsi: MMSIType) -> Result<(dimensions::DimensionType, dimensions::DimensionType, dimensions::DimensionType, dimensions::DimensionType), TabelError> {
-        let index = self.mmsi.into_iter().position(|x| x == mmsi).ok_or(TabelError::MissingKey)?;
+        let index = self.mmsi.iter().position(|x| *x == mmsi).ok_or(TabelError::MissingKey)?;
 
         Ok((self.a[index], self.b[index], self.c[index], self.d[index]))
     }

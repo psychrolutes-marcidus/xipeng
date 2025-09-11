@@ -19,9 +19,14 @@ impl NavStatus {
 }
 
 impl NavStatus {
-    pub fn search_by_key()
+    pub fn search_by_key(&self, mmsi: MMSIType, time: TimeType) -> Result<NavStatusValue, TabelError> {
+        let index = self.mmsi.iter().zip(self.time_begin.iter().zip(self.time_end.iter())).position(|(m, (tb, te))| *m == mmsi && *tb <= time && *te >= time).ok_or(TabelError::MissingKey)?;
+
+        Ok(self.nav_status[index])
+    }
 }
 
+#[derive(Debug, Copy, Clone)]
 pub enum NavStatusValue {
     UnderWayUsingEngine,
     Anchored,

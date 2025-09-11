@@ -20,7 +20,7 @@ impl Dimensions {
 
 impl Dimensions {
     pub fn search_by_key(&self, mmsi: MMSIType) -> Result<(DimensionType, DimensionType), TabelError> {
-        let index = self.mmsi.into_iter().position(|x| x == mmsi).ok_or(TabelError::MissingKey)?;
+        let index = self.mmsi.iter().position(|x| *x == mmsi).ok_or(TabelError::MissingKey)?;
 
         Ok((self.width[index], self.length[index]))
     }

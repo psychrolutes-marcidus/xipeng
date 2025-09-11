@@ -1,10 +1,12 @@
 use super::*;
 
+pub type DraughtType = f32;
+
 pub struct Draught {
-    pub mmsi: Vec<u64>,
-    pub time_begin: Vec<NaiveDateTime>,
-    pub time_end: Vec<NaiveDateTime>,
-    pub draught: Vec<f32>,
+    pub mmsi: Vec<MMSIType>,
+    pub time_begin: Vec<TimeType>,
+    pub time_end: Vec<TimeType>,
+    pub draught: Vec<DraughtType>,
 }
 
 impl Draught {
@@ -15,5 +17,13 @@ impl Draught {
             time_end: Vec::new(),
             draught: Vec::new() ,
        }
+    }
+}
+
+impl Draught {
+    pub fn search_by_key(&self, mmsi: MMSIType, time: TimeType) -> Result<DraughtType, TabelError> {
+        let index = self.mmsi.iter().zip(self.time_begin.iter().zip(self.time_end.iter())).position(|(m, (tb, te))| *m == mmsi && *tb <= time && *te >= time).ok_or(TabelError::MissingKey)?;
+
+        Ok(self.draught[index])
     }
 }
