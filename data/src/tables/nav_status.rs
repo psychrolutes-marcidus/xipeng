@@ -18,6 +18,10 @@ impl NavStatus {
     }
 }
 
+impl NavStatus {
+    pub fn search_by_key()
+}
+
 pub enum NavStatusValue {
     UnderWayUsingEngine,
     Anchored,

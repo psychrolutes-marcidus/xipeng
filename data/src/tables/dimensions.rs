@@ -1,7 +1,11 @@
+use super::*;
+
+pub type DimensionType = u16;
+
 pub struct Dimensions {
-    pub mmsi: Vec<u64>,
-    pub width: Vec<u16>,
-    pub length: Vec<u16>,
+    pub mmsi: Vec<MMSIType>,
+    pub width: Vec<DimensionType>,
+    pub length: Vec<DimensionType>,
 }
 
 impl Dimensions {
@@ -11,5 +15,13 @@ impl Dimensions {
             width: Vec::new(),
             length: Vec::new(),
         }
+    }
+}
+
+impl Dimensions {
+    pub fn search_by_key(&self, mmsi: MMSIType) -> Result<(DimensionType, DimensionType), TabelError> {
+        let index = self.mmsi.into_iter().position(|x| x == mmsi).ok_or(TabelError::MissingKey)?;
+
+        Ok((self.width[index], self.length[index]))
     }
 }

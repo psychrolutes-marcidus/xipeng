@@ -1,9 +1,11 @@
+use super::*;
+
 pub struct GPSPosition {
-    pub mmsi: Vec<u64>,
-    pub a: Vec<u16>,
-    pub b: Vec<u16>,
-    pub c: Vec<u16>,
-    pub d: Vec<u16>,
+    pub mmsi: Vec<MMSIType>,
+    pub a: Vec<dimensions::DimensionType>,
+    pub b: Vec<dimensions::DimensionType>,
+    pub c: Vec<dimensions::DimensionType>,
+    pub d: Vec<dimensions::DimensionType>,
 }
 
 impl GPSPosition {
@@ -17,4 +19,13 @@ impl GPSPosition {
         }
     }
 }
+
+impl GPSPosition {
+    pub fn search_by_key(&self, mmsi: MMSIType) -> Result<(dimensions::DimensionType, dimensions::DimensionType, dimensions::DimensionType, dimensions::DimensionType), TabelError> {
+        let index = self.mmsi.into_iter().position(|x| x == mmsi).ok_or(TabelError::MissingKey)?;
+
+        Ok((self.a[index], self.b[index], self.c[index], self.d[index]))
+    }
+}
+
 
