@@ -9,8 +9,8 @@ use crate::types::error::Error;
 use crate::types::pointm::PointM;
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct LineStringM(Vec<CoordM>);
-
+pub struct LineStringM(pub Vec<CoordM>);
+Á
 impl LineStringM {
     pub fn new(coords: Vec<CoordM>) -> Option<LineStringM> {
         if coords.iter().map(|f| f.m).is_sorted() && coords.len() != 1 {
