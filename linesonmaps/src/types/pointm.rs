@@ -1,6 +1,17 @@
-use geo_traits::{GeometryTrait, PointTrait, UnimplementedGeometryCollection, UnimplementedLine, UnimplementedLineString, UnimplementedMultiLineString, UnimplementedMultiPoint, UnimplementedMultiPolygon, UnimplementedPolygon, UnimplementedRect, UnimplementedTriangle};
-
+use geo::Euclidean;
+use geo::algorithm::Distance;
+use geo::algorithm::Length;
+use geo_traits::CoordTrait;
+use geo_traits::{
+    GeometryTrait, PointTrait, UnimplementedGeometryCollection, UnimplementedLine,
+    UnimplementedLineString, UnimplementedMultiLineString, UnimplementedMultiPoint,
+    UnimplementedMultiPolygon, UnimplementedPolygon, UnimplementedRect, UnimplementedTriangle,
+};
+// use geo::algorithm::Geodesic;
 use crate::types::coordm::CoordM;
+use geo::algorithm::GeodesicMeasure;
+use geo_types::{Coord, Point};
+use geographiclib_rs::Geodesic;
 
 ///largely similar to a [`CoordM`], but distinctions are made in libraries, so i am going to as well :)
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -10,14 +21,27 @@ pub struct PointM {
 
 impl PointM {}
 
-impl From<(f64,f64,f64)> for PointM {
-    fn from((first,second,third): (f64,f64,f64)) -> Self {
-        PointM {coord: CoordM { x: first, y: second, m: third }}
+impl From<(f64, f64, f64)> for PointM {
+    fn from((first, second, third): (f64, f64, f64)) -> Self {
+        PointM {
+            coord: CoordM {
+                x: first,
+                y: second,
+                m: third,
+            },
+        }
     }
 }
-impl From<CoordM> for PointM{
+impl From<CoordM> for PointM {
     fn from(value: CoordM) -> Self {
         PointM { coord: value }
+    }
+}
+
+// maybe this impl can be combined with its nonborrowing equivalent
+impl From<&CoordM> for PointM{
+    fn from(value: &CoordM) -> Self {
+        PointM { coord: value.to_owned() }
     }
 }
 
@@ -107,5 +131,35 @@ impl PointTrait for PointM {
 
     fn coord(&self) -> Option<Self::CoordType<'_>> {
         Some(self.coord)
+    }
+}
+impl From<PointM> for Point {
+    fn from(value: PointM) -> Self {
+        Point(Coord {
+            x: value.coord.x(),
+            y: value.coord.y(),
+        })
+    }
+}
+
+impl Distance<f64, PointM, PointM> for GeodesicMeasure<fn() -> Geodesic> {
+    fn distance(&self, origin: PointM, destination: PointM) -> f64 {
+        self.distance(Point::from(origin), Point::from(destination))
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use geo::orient;
+    use pretty_assertions::{assert_eq, assert_ne};
+
+    #[test]
+    fn geodesic_distance() {
+        let first = PointM::from((1.0,2.0,0.0));
+        let second = PointM::from((1.0,3.0,1.0));
+        let zero_dist = GeodesicMeasure::wgs84().distance(first, first);
+        assert_eq!(zero_dist,0.0);
+        let dist = GeodesicMeasure::wgs84().distance(first,second);
+        assert!(dist>= 11_000.);
     }
 }

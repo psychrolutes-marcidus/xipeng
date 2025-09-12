@@ -19,6 +19,10 @@ impl LineStringM {
             None
         }
     }
+
+    pub fn points(&self) -> PointsIter<'_> {
+        PointsIter(self.0.iter())
+    }
 }
 
 impl TryFrom<Vec<CoordM>> for LineStringM {
@@ -150,6 +154,16 @@ impl GeometryTrait for LineStringM {
     }
 }
 
+pub struct PointsIter<'a>(::core::slice::Iter<'a, CoordM>);
+
+impl<'a> Iterator for PointsIter<'a> {
+    type Item = PointM;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next().map(|c| c.into())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use geo_traits::CoordTrait;
@@ -198,6 +212,21 @@ mod tests {
             })
             .collect::<Vec<_>>();
         assert_eq!(&coords, &c);
+    }
+
+    #[test]
+    fn iterate() {
+        let coords: Vec<CoordM> = [(1.0, 2.0, 0.0), (2.0, 3.0, 1.0), (3.0, 4.0, 2.0)]
+            .map(|f| f.into())
+            .to_vec();
+        let ls = LineStringM::try_from(coords.clone()).unwrap();
+
+        let mut lsi = ls.points();
+
+        assert!(matches!(lsi.next(), Some(p) if p == (1.0, 2.0, 0.0).into()));
+        assert!(matches!(lsi.next(), Some(p) if p == (2.0, 3.0, 1.0).into()));
+        assert!(matches!(lsi.next(), Some(p) if p == (3.0, 4.0, 2.0).into()));
+        assert!(lsi.next().is_none())
     }
 
     #[test]
