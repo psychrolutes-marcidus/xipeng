@@ -5,3 +5,17 @@ members = ["algorithms", "linesonmaps"]
 [profile.release]
 lto = true
 codegen-units = 1
+
+[workspace.lints.clippy]
+# some lint suggestions are from here: https://rust-trends.com/posts/mastering-clippy-elevating-your-rust-code-quality/
+# all = { level = "deny", priority = 1 }
+complexity = {level = "deny", priority = 1}
+correctness = {level = "deny", priority = 1}
+perf = {level = "deny", priority = 1}
+unwrap_used= {level = "deny", priority = 1}
+map_unwrap_or = {level = "deny", priority = 2}
+needless_late_init = { level = "deny", priority = 2}
+
+# The following lints are not related to performance/correctness
+suspicious = "warn"
+todo = "warn"
