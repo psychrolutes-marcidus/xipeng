@@ -7,6 +7,7 @@ use geo_traits::{
     UnimplementedLineString, UnimplementedMultiLineString, UnimplementedMultiPoint,
     UnimplementedMultiPolygon, UnimplementedPolygon, UnimplementedRect, UnimplementedTriangle,
 };
+use proj::Transform;
 // use geo::algorithm::Geodesic;
 use crate::types::coordm::CoordM;
 use geo::algorithm::GeodesicMeasure;
@@ -39,9 +40,11 @@ impl From<CoordM> for PointM {
 }
 
 // maybe this impl can be combined with its nonborrowing equivalent
-impl From<&CoordM> for PointM{
+impl From<&CoordM> for PointM {
     fn from(value: &CoordM) -> Self {
-        PointM { coord: value.to_owned() }
+        PointM {
+            coord: value.to_owned(),
+        }
     }
 }
 
@@ -147,19 +150,28 @@ impl Distance<f64, PointM, PointM> for GeodesicMeasure<fn() -> Geodesic> {
         self.distance(Point::from(origin), Point::from(destination))
     }
 }
+
+impl Distance<f64, PointM, PointM> for Euclidean {
+    fn distance(&self, origin: PointM, destination: PointM) -> f64 {
+        //((destination.coord.x - origin.coord.x).powi(2) + (destination.coord.y-origin.coord.y).powi(2)).sqrt()
+        // Transform::transform;
+        // Point::from(origin).transformed_crs_to_crs("EPSG:4326", "EPSG:3857");
+        Euclidean.distance(Point::from(origin), Point::from(destination))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use geo::orient;
     use pretty_assertions::{assert_eq, assert_ne};
 
     #[test]
     fn geodesic_distance() {
-        let first = PointM::from((1.0,2.0,0.0));
-        let second = PointM::from((1.0,3.0,1.0));
+        let first = PointM::from((1.0, 2.0, 0.0));
+        let second = PointM::from((1.0, 3.0, 1.0));
         let zero_dist = GeodesicMeasure::wgs84().distance(first, first);
-        assert_eq!(zero_dist,0.0);
-        let dist = GeodesicMeasure::wgs84().distance(first,second);
-        assert!(dist>= 11_000.);
+        assert_eq!(zero_dist, 0.0);
+        let dist = GeodesicMeasure::wgs84().distance(first, second);
+        assert!(dist >= 11_000.);
     }
 }
