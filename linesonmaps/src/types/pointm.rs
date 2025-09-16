@@ -15,7 +15,7 @@ use geographiclib_rs::Geodesic;
 
 ///largely similar to a [`CoordM`], but distinctions are made in libraries, so i am going to as well :)
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct PointM<const CRS: u64> {
+pub struct PointM<const CRS: u64 = 4326> {
     pub coord: CoordM<CRS>,
 }
 
