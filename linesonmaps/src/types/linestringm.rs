@@ -9,10 +9,10 @@ use crate::types::error::Error;
 use crate::types::pointm::PointM;
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct LineStringM(pub Vec<CoordM>);
+pub struct LineStringM<const CRS: u64>(pub Vec<CoordM<CRS>>);
 
-impl LineStringM {
-    pub fn new(coords: Vec<CoordM>) -> Option<LineStringM> {
+impl<const CRS: u64> LineStringM<CRS> {
+    pub fn new(coords: Vec<CoordM<CRS>>) -> Option<LineStringM<CRS>> {
         if coords.iter().map(|f| f.m).is_sorted() && coords.len() != 1 {
             Some(LineStringM(coords))
         } else {
@@ -20,15 +20,15 @@ impl LineStringM {
         }
     }
 
-    pub fn points(&self) -> PointsIter<'_> {
+    pub fn points(&self) -> PointsIter<'_,CRS> {
         PointsIter(self.0.iter())
     }
 }
 
-impl TryFrom<Vec<CoordM>> for LineStringM {
+impl<const CRS: u64> TryFrom<Vec<CoordM<CRS>>> for LineStringM<CRS> {
     type Error = super::error::Error;
 
-    fn try_from(value: Vec<CoordM>) -> Result<Self, Self::Error> {
+    fn try_from(value: Vec<CoordM<CRS>>) -> Result<Self, Self::Error> {
         match value.len() {
             1 => Err(super::error::Error::NumPoints), //TODO verify that points are temporally ordered
             _ => Ok(LineStringM(value)),
@@ -36,7 +36,7 @@ impl TryFrom<Vec<CoordM>> for LineStringM {
     }
 }
 
-impl TryFrom<wkb::reader::Wkb<'_>> for LineStringM {
+impl<const CRS: u64> TryFrom<wkb::reader::Wkb<'_>> for LineStringM<CRS> {
     type Error = super::error::Error;
 
     fn try_from(value: wkb::reader::Wkb<'_>) -> Result<Self, Self::Error> {
@@ -60,9 +60,9 @@ impl TryFrom<wkb::reader::Wkb<'_>> for LineStringM {
     }
 }
 
-impl LineStringTrait for LineStringM {
+impl<const CRS: u64> LineStringTrait for LineStringM<CRS> {
     type CoordType<'a>
-        = CoordM
+        = CoordM<CRS>
     where
         Self: 'a;
 
@@ -78,16 +78,16 @@ impl LineStringTrait for LineStringM {
         }
     }
 }
-impl GeometryTrait for LineStringM {
+impl<const CRS: u64> GeometryTrait for LineStringM<CRS> {
     type T = f64;
 
     type PointType<'a>
-        = PointM
+        = PointM<CRS>
     where
         Self: 'a;
 
     type LineStringType<'a>
-        = LineStringM
+        = LineStringM<CRS>
     where
         Self: 'a;
 
@@ -154,10 +154,10 @@ impl GeometryTrait for LineStringM {
     }
 }
 
-pub struct PointsIter<'a>(::core::slice::Iter<'a, CoordM>);
+pub struct PointsIter<'a,const CRS:u64>(::core::slice::Iter<'a, CoordM<CRS>>);
 
-impl<'a> Iterator for PointsIter<'a> {
-    type Item = PointM;
+impl<'a,const CRS:u64> Iterator for PointsIter<'a,CRS> {
+    type Item = PointM<CRS>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.0.next().map(|c| c.into())
@@ -182,7 +182,7 @@ mod tests {
     fn writer() {
         let mut output: Vec<u8> = Vec::new();
 
-        let coords: Vec<CoordM> = [(1.0, 2.0, 0.0), (2.0, 3.0, 1.0), (3.0, 4.0, 2.0)]
+        let coords: Vec<CoordM<4326>> = [(1.0, 2.0, 0.0), (2.0, 3.0, 1.0), (3.0, 4.0, 2.0)]
             .map(|f| f.into())
             .to_vec();
         let ls = LineStringM::try_from(coords.clone()).unwrap();
@@ -216,7 +216,7 @@ mod tests {
 
     #[test]
     fn iterate() {
-        let coords: Vec<CoordM> = [(1.0, 2.0, 0.0), (2.0, 3.0, 1.0), (3.0, 4.0, 2.0)]
+        let coords: Vec<CoordM<4326>> = [(1.0, 2.0, 0.0), (2.0, 3.0, 1.0), (3.0, 4.0, 2.0)]
             .map(|f| f.into())
             .to_vec();
         let ls = LineStringM::try_from(coords.clone()).unwrap();
@@ -236,7 +236,7 @@ mod tests {
         let bytea = hex::decode(hexstring).unwrap();
 
         let wkb = read_wkb(&bytea).unwrap();
-        let lsm = LineStringM::try_from(wkb);
+        let lsm = LineStringM::<4326>::try_from(wkb);
         assert!(lsm.is_ok());
         // dbg!(lsm.unwrap());
     }

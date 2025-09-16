@@ -1,6 +1,5 @@
 use geo::Euclidean;
 use geo::algorithm::Distance;
-use geo::algorithm::Length;
 use geo_traits::CoordTrait;
 use geo_traits::{
     GeometryTrait, PointTrait, UnimplementedGeometryCollection, UnimplementedLine,
@@ -16,13 +15,13 @@ use geographiclib_rs::Geodesic;
 
 ///largely similar to a [`CoordM`], but distinctions are made in libraries, so i am going to as well :)
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct PointM {
-    pub coord: CoordM,
+pub struct PointM<const CRS: u64> {
+    pub coord: CoordM<CRS>,
 }
 
-impl PointM {}
+impl<const CRS: u64> PointM<CRS> {}
 
-impl From<(f64, f64, f64)> for PointM {
+impl<const CRS: u64> From<(f64, f64, f64)> for PointM<CRS> {
     fn from((first, second, third): (f64, f64, f64)) -> Self {
         PointM {
             coord: CoordM {
@@ -33,15 +32,15 @@ impl From<(f64, f64, f64)> for PointM {
         }
     }
 }
-impl From<CoordM> for PointM {
-    fn from(value: CoordM) -> Self {
+impl<const CRS: u64> From<CoordM<CRS>> for PointM<CRS> {
+    fn from(value: CoordM<CRS>) -> Self {
         PointM { coord: value }
     }
 }
 
 // maybe this impl can be combined with its nonborrowing equivalent
-impl From<&CoordM> for PointM {
-    fn from(value: &CoordM) -> Self {
+impl<const CRS: u64> From<&CoordM<CRS>> for PointM<CRS> {
+    fn from(value: &CoordM<CRS>) -> Self {
         PointM {
             coord: value.to_owned(),
         }
@@ -49,11 +48,11 @@ impl From<&CoordM> for PointM {
 }
 
 //wth is this
-impl GeometryTrait for PointM {
+impl<const CRS: u64> GeometryTrait for PointM<CRS> {
     type T = f64;
 
     type PointType<'a>
-        = PointM
+        = PointM<CRS>
     where
         Self: 'a;
 
@@ -126,9 +125,9 @@ impl GeometryTrait for PointM {
     }
 }
 
-impl PointTrait for PointM {
+impl<const CRS: u64> PointTrait for PointM<CRS> {
     type CoordType<'a>
-        = CoordM
+        = CoordM<CRS>
     where
         Self: 'a;
 
@@ -136,8 +135,8 @@ impl PointTrait for PointM {
         Some(self.coord)
     }
 }
-impl From<PointM> for Point {
-    fn from(value: PointM) -> Self {
+impl<const CRS: u64> From<PointM<CRS>> for Point {
+    fn from(value: PointM<CRS>) -> Self {
         Point(Coord {
             x: value.coord.x(),
             y: value.coord.y(),
@@ -145,14 +144,14 @@ impl From<PointM> for Point {
     }
 }
 
-impl Distance<f64, PointM, PointM> for GeodesicMeasure<fn() -> Geodesic> {
-    fn distance(&self, origin: PointM, destination: PointM) -> f64 {
+impl<const CRS: u64> Distance<f64, PointM<CRS>, PointM<CRS>> for GeodesicMeasure<fn() -> Geodesic> {
+    fn distance(&self, origin: PointM<CRS>, destination: PointM<CRS>) -> f64 {
         self.distance(Point::from(origin), Point::from(destination))
     }
 }
 
-impl Distance<f64, PointM, PointM> for Euclidean {
-    fn distance(&self, origin: PointM, destination: PointM) -> f64 {
+impl<const CRS: u64> Distance<f64, PointM<CRS>, PointM<CRS>> for Euclidean {
+    fn distance(&self, origin: PointM<CRS>, destination: PointM<CRS>) -> f64 {
         //((destination.coord.x - origin.coord.x).powi(2) + (destination.coord.y-origin.coord.y).powi(2)).sqrt()
         // Transform::transform;
         // Point::from(origin).transformed_crs_to_crs("EPSG:4326", "EPSG:3857");
@@ -164,14 +163,23 @@ impl Distance<f64, PointM, PointM> for Euclidean {
 mod tests {
     use super::*;
     use pretty_assertions::{assert_eq, assert_ne};
+    use proj::Proj;
 
     #[test]
     fn geodesic_distance() {
-        let first = PointM::from((1.0, 2.0, 0.0));
+        let first = PointM::<4326>::from((1.0, 2.0, 0.0));
         let second = PointM::from((1.0, 3.0, 1.0));
         let zero_dist = GeodesicMeasure::wgs84().distance(first, first);
         assert_eq!(zero_dist, 0.0);
         let dist = GeodesicMeasure::wgs84().distance(first, second);
         assert!(dist >= 11_000.);
+    }
+
+    #[test]
+    #[ignore = "does not work the way i thought"]
+    fn proj_is_projing() {
+        dbg!(Proj::new_known_crs("EPSG:3857", "EPSG:4326", None).unwrap().proj_info());
+        assert!(false)
+
     }
 }
