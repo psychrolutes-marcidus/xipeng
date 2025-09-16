@@ -156,12 +156,12 @@ impl<const CRS: u64> Distance<f64, PointM<CRS>, PointM<CRS>> for GeodesicMeasure
 }
 
 impl<const CRS: u64> Distance<f64, PointM<CRS>, PointM<CRS>> for HaversineMeasure {
-    debug_assert!(
-        super::consts::DEGREE_CRS.contains(&CRS),
-        "Given CRS: {0} uses non-degree Uom",
-        CRS
-    );
     fn distance(&self, origin: PointM<CRS>, destination: PointM<CRS>) -> f64 {
+        debug_assert!(
+            super::consts::DEGREE_CRS.contains(&CRS),
+            "Given CRS: {0} uses non-degree Uom",
+            CRS
+        );
         self.distance(Point::from(origin), Point::from(destination))
     }
 }
@@ -184,6 +184,7 @@ impl<const CRS: u64> Distance<f64, PointM<CRS>, PointM<CRS>> for Euclidean {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use geo::algorithm::line_measures::metric_spaces::Geodesic;
     use pretty_assertions::{assert_eq, assert_ne};
     use proj::Proj;
 
@@ -195,6 +196,10 @@ mod tests {
         assert_eq!(zero_dist, 0.0);
         let dist = GeodesicMeasure::wgs84().distance(first, second);
         assert!(dist >= 11_000.);
+
+        // the preferred way of measuring geodesic distance
+        let alternative = Geodesic.distance(first, second);
+        assert_eq!(dist, alternative);
     }
 
     #[test]
