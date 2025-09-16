@@ -8,6 +8,14 @@ pub struct CoordM<const CRS: u64 = 4326> {
     pub m: f64,
 }
 
+impl<const CRS: u64> std::hash::Hash for CoordM<CRS>{
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.x.to_bits().hash(state);
+        self.y.to_bits().hash(state);
+        self.m.to_bits().hash(state);
+    }
+}
+
 impl<const CRS: u64> CoordM<CRS> {}
 
 impl<const CRS: u64> From<(f64, f64, f64)> for CoordM<CRS> {

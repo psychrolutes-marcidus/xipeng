@@ -8,7 +8,7 @@ use crate::types::coordm::CoordM;
 use crate::types::error::Error;
 use crate::types::pointm::PointM;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq,Hash)]
 pub struct LineStringM<const CRS: u64 = 4326>(pub Vec<CoordM<CRS>>);
 
 impl<const CRS: u64> LineStringM<CRS> {
