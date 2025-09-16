@@ -52,7 +52,10 @@ where
 mod tests {
     use super::*;
     use crate::types::coordm::CoordM;
+    use geo::Distance;
+    use geographiclib_rs::Geodesic;
     use pretty_assertions::{assert_eq, assert_ne};
+    use wkb::reader::read_wkb;
     #[test]
     fn no_segment() {
         let coords: Vec<CoordM<4326>> = [(1.0, 2.0, 0.0), (2.0, 3.0, 1.0), (3.0, 4.0, 2.0)]
@@ -107,5 +110,24 @@ mod tests {
             res.iter().any(|ls| ls.0.len() != 1),
             "Linestrings with length ==1 is disallowed"
         );
+    }
+
+    #[test]
+    fn funny_trajectory() {
+        const HEXSTRING: &str = include_str!("./resources/207138000.txt");
+
+        let bytea = hex::decode(HEXSTRING).unwrap();
+        let wkb = read_wkb(&bytea).unwrap();
+        let lsm = LineStringM::<4326>::try_from(wkb).unwrap();
+
+        let func = |f: PointM, s: PointM| {
+            geo::algorithm::line_measures::metric_spaces::Geodesic.distance(f, s) <= 1000.
+                || s.coord.m - f.coord.m <= 60.
+        };
+        dbg!(&lsm.0.len());
+        let segments = segment_linestring(lsm, func);
+        dbg!(segments.len());
+        dbg!(segments);
+
     }
 }
