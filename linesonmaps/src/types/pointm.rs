@@ -1,5 +1,5 @@
-use geo::Euclidean;
 use geo::algorithm::Distance;
+use geo::{Euclidean, HaversineMeasure};
 use geo_traits::CoordTrait;
 use geo_traits::{
     GeometryTrait, PointTrait, UnimplementedGeometryCollection, UnimplementedLine,
@@ -146,6 +146,22 @@ impl<const CRS: u64> From<PointM<CRS>> for Point {
 
 impl<const CRS: u64> Distance<f64, PointM<CRS>, PointM<CRS>> for GeodesicMeasure<fn() -> Geodesic> {
     fn distance(&self, origin: PointM<CRS>, destination: PointM<CRS>) -> f64 {
+        debug_assert!(
+            super::consts::DEGREE_CRS.contains(&CRS),
+            "Given CRS: {0} uses non-degree Uom",
+            CRS
+        );
+        self.distance(Point::from(origin), Point::from(destination))
+    }
+}
+
+impl<const CRS: u64> Distance<f64, PointM<CRS>, PointM<CRS>> for HaversineMeasure {
+    debug_assert!(
+        super::consts::DEGREE_CRS.contains(&CRS),
+        "Given CRS: {0} uses non-degree Uom",
+        CRS
+    );
+    fn distance(&self, origin: PointM<CRS>, destination: PointM<CRS>) -> f64 {
         self.distance(Point::from(origin), Point::from(destination))
     }
 }
@@ -155,7 +171,13 @@ impl<const CRS: u64> Distance<f64, PointM<CRS>, PointM<CRS>> for Euclidean {
         //((destination.coord.x - origin.coord.x).powi(2) + (destination.coord.y-origin.coord.y).powi(2)).sqrt()
         // Transform::transform;
         // Point::from(origin).transformed_crs_to_crs("EPSG:4326", "EPSG:3857");
-        Euclidean.distance(Point::from(origin), Point::from(destination))
+        debug_assert!(
+            super::consts::METRIC_CRS.contains(&CRS),
+            "Given CRS: {0} uses non-meter Uom",
+            CRS
+        );
+        self.distance(Point::from(origin), Point::from(destination))
+        // Euclidean.distance(Point::from(origin), Point::from(destination))
     }
 }
 
@@ -178,8 +200,11 @@ mod tests {
     #[test]
     #[ignore = "does not work the way i thought"]
     fn proj_is_projing() {
-        dbg!(Proj::new_known_crs("EPSG:3857", "EPSG:4326", None).unwrap().proj_info());
+        dbg!(
+            Proj::new_known_crs("EPSG:3857", "EPSG:4326", None)
+                .unwrap()
+                .proj_info()
+        );
         assert!(false)
-
     }
 }
