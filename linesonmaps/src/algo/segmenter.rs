@@ -8,21 +8,12 @@ pub fn segment_linestring<const CRS: u64, F>(ls: LineStringM<CRS>, func: F) -> V
 where
     F: Fn(PointM<CRS>, PointM<CRS>) -> bool,
 {
-    // #[cfg(debug_assertions)]
-    // let mut hasher = DefaultHasher::new();
-    // #[cfg(debug_assertions)]
-    // ls.hash(&mut hasher);
-    // #[cfg(debug_assertions)]
-    // let hash = hasher.finish();
-
     #[cfg(debug_assertions)]
     let clone = ls.clone();
 
     let mut ls = ls;
     let mut output = vec![];
     let mut split_idxs: Vec<usize> = vec![];
-    // let mut offset: usize = 0;
-    // output.last().unwrap().0.push(*ls.0.first().unwrap());
     for (idx, ele) in ls.0.windows(2).enumerate() {
         if !func(ele[0].into(), ele[1].into()) {
             split_idxs.push(idx + 1);
@@ -54,21 +45,6 @@ where
         output.iter().any(|ls| ls.0.len() != 1),
         "Linestrings may not have length 1"
     );
-
-    // ! DISSALLOW LINESTRINGS WITH LENGTH == 1;
-
-    // let mut lsi = ls.points();
-
-    // while true {
-    //     let first = lsi.next();
-    //     let second = lsi.next();
-    //     match first.and_then(|f| second.map(|s| func(f,s))) {
-    //         Some(true) => {output.last().unwrap().0.extend_from_slice(&[first,second]);},
-    //         Some(false) => {},
-    //         None => {},
-    //     }
-    // }
-
     output
 }
 
@@ -121,7 +97,7 @@ mod tests {
             (2.0, 3.0, 1.0),
             (3.0, 4.0, 3.0),
             (4.0, 5.0, 5.0),
-            (5.0,6.0,6.0),
+            (5.0, 6.0, 6.0),
         ]
         .map(|f| f.into())
         .to_vec();
@@ -139,6 +115,9 @@ mod tests {
         //             .to_vec(),
         //     ),
         // ];
-        assert!(res.iter().any(|ls|ls.0.len()!=1),"Linestrings with length ==1 is disallowed");
+        assert!(
+            res.iter().any(|ls| ls.0.len() != 1),
+            "Linestrings with length ==1 is disallowed"
+        );
     }
 }
