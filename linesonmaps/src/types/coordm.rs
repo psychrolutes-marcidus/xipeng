@@ -2,7 +2,7 @@ use geo_traits::CoordTrait;
 use geo_traits::GeometryTrait;
 use geo_traits::PointTrait;
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct CoordM<const CRS: u64> {
+pub struct CoordM<const CRS: u64 = 4326> {
     pub x: f64,
     pub y: f64,
     pub m: f64,

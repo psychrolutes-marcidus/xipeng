@@ -9,7 +9,7 @@ use crate::types::error::Error;
 use crate::types::pointm::PointM;
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct LineStringM<const CRS: u64>(pub Vec<CoordM<CRS>>);
+pub struct LineStringM<const CRS: u64 = 4326>(pub Vec<CoordM<CRS>>);
 
 impl<const CRS: u64> LineStringM<CRS> {
     pub fn new(coords: Vec<CoordM<CRS>>) -> Option<LineStringM<CRS>> {
