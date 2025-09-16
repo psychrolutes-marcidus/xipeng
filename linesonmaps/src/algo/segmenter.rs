@@ -30,7 +30,7 @@ where
         output.push(ls);
     }
 
-    #[cfg(debug_assertions)] // This is apparently required
+    #[cfg(debug_assertions)]
     debug_assert_eq!(
         clone,
         LineStringM(
@@ -103,18 +103,6 @@ mod tests {
         .to_vec();
         let func = |f: PointM, s: PointM| (s.coord.m - f.coord.m) <= 1.1;
         let res = segment_linestring(LineStringM(coords.clone()), func);
-        // let expected = vec![
-        //     LineStringM::<4326>(
-        //         [(1.0, 2.0, 0.0), (2.0, 3.0, 1.0)]
-        //             .map(|f| f.into())
-        //             .to_vec(),
-        //     ),
-        //     LineStringM::<4326>(
-        //         [(3.0, 4.0, 3.0), (4.0, 5.0, 4.0)]
-        //             .map(|f| f.into())
-        //             .to_vec(),
-        //     ),
-        // ];
         assert!(
             res.iter().any(|ls| ls.0.len() != 1),
             "Linestrings with length ==1 is disallowed"
