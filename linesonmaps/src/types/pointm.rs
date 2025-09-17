@@ -6,7 +6,6 @@ use geo_traits::{
     UnimplementedLineString, UnimplementedMultiLineString, UnimplementedMultiPoint,
     UnimplementedMultiPolygon, UnimplementedPolygon, UnimplementedRect, UnimplementedTriangle,
 };
-// use geo::algorithm::Geodesic;
 use crate::types::coordm::CoordM;
 use geo::algorithm::GeodesicMeasure;
 use geo_types::{Coord, Point};
@@ -181,8 +180,6 @@ mod tests {
     use super::*;
     use geo::algorithm::line_measures::metric_spaces::Geodesic;
     use pretty_assertions::{assert_eq, assert_ne};
-    use proj::Proj;
-
     #[test]
     fn geodesic_distance() {
         let first = PointM::<4326>::from((1.0, 2.0, 0.0));
@@ -195,16 +192,5 @@ mod tests {
         // the preferred way of measuring geodesic distance
         let alternative = Geodesic.distance(first, second);
         assert_eq!(dist, alternative);
-    }
-
-    #[test]
-    #[ignore = "does not work the way i thought"]
-    fn proj_is_projing() {
-        dbg!(
-            Proj::new_known_crs("EPSG:3857", "EPSG:4326", None)
-                .unwrap()
-                .proj_info()
-        );
-        assert!(false)
     }
 }
