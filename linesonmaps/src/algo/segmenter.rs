@@ -1,6 +1,10 @@
 use crate::types::linestringm::LineStringM;
 use crate::types::pointm::PointM;
 
+/// Splits a linestring into (potentially) several sub-segments using a splitting function.
+/// 
+/// `ls`: The input linestring
+/// `func`: A function that compares to subsequent points, The original linestring will be split if the function returns `false`
 pub fn segment_linestring<const CRS: u64, F>(ls: LineStringM<CRS>, func: F) -> Vec<LineStringM<CRS>>
 where
     F: Fn(PointM<CRS>, PointM<CRS>) -> bool,
@@ -9,7 +13,6 @@ where
     let clone = ls.0.clone();
 
     let mut ls = ls.0;
-    // let mut split_idx: usize = 0;
     let mut offset: usize = 0;
     let mut output: Vec<LineStringM<CRS>> = vec![];
 
@@ -72,7 +75,6 @@ mod tests {
     use crate::types::coordm::CoordM;
     use crate::types::multilinestringm::MultiLineStringM;
     use geo::Distance;
-    use geographiclib_rs::Geodesic;
     use hex::encode;
     use pretty_assertions::{assert_eq, assert_ne};
     use wkb::reader::read_wkb;
@@ -148,8 +150,6 @@ mod tests {
         dbg!(&lsm.0.len());
         let segments = segment_linestring(lsm, func);
         dbg!(segments.len());
-        // segments.iter().map(|ls| wkb::writer::write)
-        // dbg!(segments);
 
         let mut output: Vec<u8> = Vec::new();
 
