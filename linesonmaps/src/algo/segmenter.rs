@@ -1,11 +1,12 @@
 use crate::types::linestringm::LineStringM;
+use crate::types::multilinestringm::MultiLineStringM;
 use crate::types::pointm::PointM;
 
 /// Splits a linestring into (potentially) several sub-segments using a splitting function.
 /// 
 /// `ls`: The input linestring
 /// `func`: A function that compares to subsequent points, The original linestring will be split if the function returns `false`
-pub fn segment_linestring<const CRS: u64, F>(ls: LineStringM<CRS>, func: F) -> Vec<LineStringM<CRS>>
+pub fn segment_linestring<const CRS: u64, F>(ls: LineStringM<CRS>, func: F) ->  MultiLineStringM<CRS>
 where
     F: Fn(PointM<CRS>, PointM<CRS>) -> bool,
 {
@@ -64,7 +65,7 @@ where
         debug_assert_eq!(clone, conc);
     }
 
-    output
+    output.into()
 }
 
 #[cfg(test)]
@@ -86,7 +87,7 @@ mod tests {
             .to_vec();
         let func = |f: PointM, s: PointM| (s.coord.m - f.coord.m) <= 1.1;
         let res = segment_linestring(LineStringM(coords.clone()), func);
-        assert_eq!(res[0], LineStringM(coords));
+        assert_eq!(res.0[0], LineStringM(coords));
     }
 
     #[test]
@@ -113,7 +114,7 @@ mod tests {
                     .to_vec(),
             ),
         ];
-        assert_eq!(res, expected);
+        assert_eq!(res.0, expected);
     }
 
     #[test]
@@ -130,7 +131,7 @@ mod tests {
         let func = |f: PointM, s: PointM| (s.coord.m - f.coord.m) <= 1.1;
         let res = segment_linestring(LineStringM(coords.clone()), func);
         assert!(
-            res.iter().any(|ls| ls.0.len() != 1),
+            res.0.iter().any(|ls| ls.0.len() != 1),
             "Linestrings with length ==1 is disallowed"
         );
     }
@@ -149,13 +150,13 @@ mod tests {
         };
         dbg!(&lsm.0.len());
         let segments = segment_linestring(lsm, func);
-        dbg!(segments.len());
+        dbg!(segments.0.len());
 
         let mut output: Vec<u8> = Vec::new();
 
         let _ = wkb::writer::write_multi_line_string(
             &mut output,
-            &MultiLineStringM(segments.clone()),
+            &MultiLineStringM(segments.0.clone()),
             &WriteOptions {
                 endianness: wkb::Endianness::LittleEndian,
             },
@@ -165,6 +166,6 @@ mod tests {
         // fs::write("multilinestring.txt", hexstring.to_ascii_uppercase()).unwrap();
 
         // not sure what to test for :))
-        assert_eq!(segments.len(),23);
+        assert_eq!(segments.0.len(),23);
     }
 }
