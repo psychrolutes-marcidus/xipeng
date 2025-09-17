@@ -102,12 +102,17 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use super::*;
     use crate::types::coordm::CoordM;
+    use crate::types::multilinestringm::MultiLineStringM;
     use geo::Distance;
     use geographiclib_rs::Geodesic;
+    use hex::encode;
     use pretty_assertions::{assert_eq, assert_ne};
     use wkb::reader::read_wkb;
+    use wkb::writer::WriteOptions;
     #[test]
     fn no_segment() {
         let coords: Vec<CoordM<4326>> = [(1.0, 2.0, 0.0), (2.0, 3.0, 1.0), (3.0, 4.0, 2.0)]
@@ -181,5 +186,19 @@ mod tests {
         dbg!(segments.len());
         // segments.iter().map(|ls| wkb::writer::write)
         // dbg!(segments);
+
+        let mut output: Vec<u8> = Vec::new();
+
+        let _ = wkb::writer::write_multi_line_string(
+            &mut output,
+            &MultiLineStringM(segments),
+            &WriteOptions {
+                endianness: wkb::Endianness::LittleEndian,
+            },
+        );
+
+        let hexstring = encode(&output);
+        fs::write("multilinestring.txt", hexstring.to_ascii_uppercase()).unwrap();
+        assert!(false)
     }
 }
