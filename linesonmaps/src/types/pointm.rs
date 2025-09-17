@@ -167,16 +167,12 @@ impl<const CRS: u64> Distance<f64, PointM<CRS>, PointM<CRS>> for HaversineMeasur
 
 impl<const CRS: u64> Distance<f64, PointM<CRS>, PointM<CRS>> for Euclidean {
     fn distance(&self, origin: PointM<CRS>, destination: PointM<CRS>) -> f64 {
-        //((destination.coord.x - origin.coord.x).powi(2) + (destination.coord.y-origin.coord.y).powi(2)).sqrt()
-        // Transform::transform;
-        // Point::from(origin).transformed_crs_to_crs("EPSG:4326", "EPSG:3857");
         debug_assert!(
             super::consts::METRIC_CRS.contains(&CRS),
             "Given CRS: {0} uses non-meter Uom",
             CRS
         );
         self.distance(Point::from(origin), Point::from(destination))
-        // Euclidean.distance(Point::from(origin), Point::from(destination))
     }
 }
 

@@ -24,6 +24,8 @@ impl<const CRS: u64> LineStringM<CRS> {
     pub fn points(&self) -> PointsIter<'_,CRS> {
         PointsIter(self.0.iter())
     }
+
+    /// Creates an iterator of lines of the given [`LineStringM<CRS>`].
     pub fn lines(&self) -> impl Iterator<Item=LineM<CRS>> + '_ {
         self.0.windows(2).map(|ps| LineM::from((ps[0],ps[1])))
     }
