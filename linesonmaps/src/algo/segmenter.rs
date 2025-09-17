@@ -1,5 +1,3 @@
-use std::hash::{DefaultHasher, Hash, Hasher};
-
 use crate::types::linestringm::LineStringM;
 use crate::types::pointm::PointM;
 

@@ -1,1 +1,1 @@
-mod segmenter;
+pub mod segmenter;

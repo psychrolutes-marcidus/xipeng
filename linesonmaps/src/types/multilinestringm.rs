@@ -37,10 +37,10 @@ impl<const CRS: u64> TryFrom<wkb::reader::Wkb<'_>> for MultiLineStringM<CRS> {
                                 })
                             })
                             .collect::<Option<Vec<_>>>()
-                            .map(|vc| LineStringM(vc))
+                            .map(LineStringM)
                             .ok_or(Error::Dimension)
                     })
-                    .collect::<Result<Vec<_>, super::error::Error>>().map(|vls| MultiLineStringM(vls))?;
+                    .collect::<Result<Vec<_>, super::error::Error>>().map(MultiLineStringM)?;
                 Ok(lss)
             }
             _ => Err(super::error::Error::IncompatibleType),
