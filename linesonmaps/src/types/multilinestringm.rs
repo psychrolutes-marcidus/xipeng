@@ -13,6 +13,12 @@ use geo_traits::{
 #[derive(Debug, Clone, PartialEq,Hash)]
 pub struct MultiLineStringM<const CRS: u64 = 4326>(pub Vec<LineStringM<CRS>>);
 
+impl<const CRS:u64> From<Vec<LineStringM<CRS>>> for MultiLineStringM<CRS> {
+    fn from(value: Vec<LineStringM<CRS>>) -> Self {
+        MultiLineStringM(value)
+    }
+}
+
 impl<const CRS: u64> TryFrom<wkb::reader::Wkb<'_>> for MultiLineStringM<CRS> {
     type Error = super::error::Error;
 
