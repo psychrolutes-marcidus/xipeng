@@ -164,7 +164,7 @@ mod tests {
         );
 
         let hexstring = encode(&output);
-        fs::write("multilinestring.txt", hexstring.to_ascii_uppercase()).unwrap();
+        // fs::write("multilinestring.txt", hexstring.to_ascii_uppercase()).unwrap();
 
         // not sure what to test for :))
         assert_eq!(segments.len(),23);
