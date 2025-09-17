@@ -76,6 +76,7 @@ where
             );
             ls = rest;
 
+            #[cfg(debug_assertions)]
             debug_assert_eq!(
                 output.iter().map(|l| l.0.len()).sum::<usize>() + ls.len(),
                 clone.len()
