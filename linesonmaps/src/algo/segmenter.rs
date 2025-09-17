@@ -4,7 +4,11 @@ use crate::types::linestringm::LineStringM;
 use crate::types::pointm::PointM;
 
 // linestring segmenter goes here
-pub fn segment_linestring<const CRS: u64, F>(ls: LineStringM<CRS>, func: F) -> Vec<LineStringM<CRS>>
+#[deprecated]
+pub fn segment_linestring_old<const CRS: u64, F>(
+    ls: LineStringM<CRS>,
+    func: F,
+) -> Vec<LineStringM<CRS>>
 where
     F: Fn(PointM<CRS>, PointM<CRS>) -> bool,
 {
@@ -45,6 +49,53 @@ where
         output.iter().any(|ls| ls.0.len() != 1),
         "Linestrings may not have length 1"
     );
+    output
+}
+pub fn segment_linestring<const CRS: u64, F>(ls: LineStringM<CRS>, func: F) -> Vec<LineStringM<CRS>>
+where
+    F: Fn(PointM<CRS>, PointM<CRS>) -> bool,
+{
+    #[cfg(debug_assertions)]
+    let clone = ls.0.clone();
+
+    let mut ls = ls.0;
+    // let mut split_idx: usize = 0;
+    let mut offset: usize = 0;
+    let mut output: Vec<LineStringM<CRS>> = vec![];
+
+    for (idx, ele) in ls.clone().windows(2).enumerate() {
+        if !func(ele[0].into(), ele[1].into()) {
+            let rest = ls.split_off(idx + 1 - offset);
+            offset = idx;
+            output.push(LineStringM(ls));
+            debug_assert_ne!(
+                output.last().map(|l| l.0.len()),
+                Some(1),
+                "Linestrings cannot have length 1 {0:?}",
+                output.last()
+            );
+            ls = rest;
+
+            debug_assert_eq!(
+                output.iter().map(|l| l.0.len()).sum::<usize>() + ls.len(),
+                clone.len()
+            );
+        }
+    }
+    if !ls.is_empty() {
+        output.push(LineStringM(ls));
+    }
+
+    #[cfg(debug_assertions)]
+    {
+        let conc = output
+            .iter()
+            .map(|l| l.clone().0)
+            .collect::<Vec<_>>()
+            .concat();
+        debug_assert_eq!(clone, conc);
+    }
+
     output
 }
 
@@ -127,7 +178,7 @@ mod tests {
         dbg!(&lsm.0.len());
         let segments = segment_linestring(lsm, func);
         dbg!(segments.len());
-        dbg!(segments);
-
+        // segments.iter().map(|ls| wkb::writer::write)
+        // dbg!(segments);
     }
 }
