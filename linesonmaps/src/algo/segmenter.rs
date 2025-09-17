@@ -3,55 +3,6 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 use crate::types::linestringm::LineStringM;
 use crate::types::pointm::PointM;
 
-// linestring segmenter goes here
-#[deprecated]
-pub fn segment_linestring_old<const CRS: u64, F>(
-    ls: LineStringM<CRS>,
-    func: F,
-) -> Vec<LineStringM<CRS>>
-where
-    F: Fn(PointM<CRS>, PointM<CRS>) -> bool,
-{
-    #[cfg(debug_assertions)]
-    let clone = ls.clone();
-
-    let mut ls = ls;
-    let mut output = vec![];
-    let mut split_idxs: Vec<usize> = vec![];
-    for (idx, ele) in ls.0.windows(2).enumerate() {
-        if !func(ele[0].into(), ele[1].into()) {
-            split_idxs.push(idx + 1);
-        }
-    }
-    for ele in split_idxs {
-        output.push(LineStringM(ls.0.drain(..ele).collect::<Vec<_>>())); //? +/- 1?;
-    }
-    if !ls.0.is_empty() {
-        output.push(LineStringM(ls.0.drain(..).collect()));
-    }
-
-    if output.is_empty() {
-        output.push(ls);
-    }
-
-    #[cfg(debug_assertions)]
-    debug_assert_eq!(
-        clone,
-        LineStringM(
-            output
-                .iter()
-                .map(|ls| ls.clone().0)
-                .collect::<Vec<_>>()
-                .concat()
-        )
-    );
-    debug_assert!(
-        output.iter().any(|ls| ls.0.len() != 1),
-        "Linestrings may not have length 1"
-    );
-    output
-}
-
 pub fn segment_linestring<const CRS: u64, F>(ls: LineStringM<CRS>, func: F) -> Vec<LineStringM<CRS>>
 where
     F: Fn(PointM<CRS>, PointM<CRS>) -> bool,
