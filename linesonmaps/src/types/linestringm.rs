@@ -6,6 +6,7 @@ use geo_traits::{
 
 use crate::types::coordm::CoordM;
 use crate::types::error::Error;
+use crate::types::linem::LineM;
 use crate::types::pointm::PointM;
 
 #[derive(Debug, Clone, PartialEq,Hash)]
@@ -22,6 +23,9 @@ impl<const CRS: u64> LineStringM<CRS> {
 
     pub fn points(&self) -> PointsIter<'_,CRS> {
         PointsIter(self.0.iter())
+    }
+    pub fn lines(&self) -> impl Iterator<Item=LineM<CRS>> + '_ {
+        self.0.windows(2).map(|ps| LineM::from((ps[0],ps[1])))
     }
 }
 
@@ -164,6 +168,16 @@ impl<'a,const CRS:u64> Iterator for PointsIter<'a,CRS> {
     }
 }
 
+pub struct LinesIter<'a,const CRS:u64>(::core::slice::Iter<'a,LineM<CRS>>);
+
+impl<'a, const CRS:u64> Iterator for LinesIter<'a,CRS>{
+    type Item = LineM<CRS>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next().copied()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use geo_traits::CoordTrait;
@@ -176,7 +190,10 @@ mod tests {
     use wkb::writer::write_line_string;
 
     use crate::types::coordm::CoordM;
+    use crate::types::linem::LineM;
     use crate::types::linestringm::LineStringM;
+
+    use pretty_assertions::{assert_eq, assert_ne};
 
     #[test]
     fn writer() {
@@ -227,6 +244,22 @@ mod tests {
         assert!(matches!(lsi.next(), Some(p) if p == (2.0, 3.0, 1.0).into()));
         assert!(matches!(lsi.next(), Some(p) if p == (3.0, 4.0, 2.0).into()));
         assert!(lsi.next().is_none())
+    }
+
+    #[test]
+    fn line_iterator() {
+        let coords: Vec<CoordM<4326>> = [(1.0, 2.0, 0.0), (2.0, 3.0, 1.0), (3.0, 4.0, 2.0)]
+            .map(|f| f.into())
+            .to_vec();
+        let ls = LineStringM::try_from(coords.clone()).unwrap();
+
+        let mut li = ls.lines();
+        let first_line = LineM::from((coords[0],coords[1]));
+        let second_line = LineM::from((coords[1],coords[2]));
+
+        assert_eq!(li.next(),Some(first_line));
+        assert_eq!(li.next(),Some(second_line));
+        assert_eq!(li.next(),None);
     }
 
     #[test]
