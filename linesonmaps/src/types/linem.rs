@@ -2,9 +2,8 @@ use crate::types::coordm::CoordM;
 use crate::types::linestringm::LineStringM;
 use crate::types::multilinestringm::MultiLineStringM;
 use crate::types::pointm::PointM;
-use crate::*;
 use geo_traits::{
-    CoordTrait, GeometryTrait, GeometryType, LineStringTrait, LineTrait, MultiLineStringTrait, UnimplementedGeometryCollection, UnimplementedLine, UnimplementedMultiLineString, UnimplementedMultiPoint, UnimplementedMultiPolygon, UnimplementedPolygon, UnimplementedRect, UnimplementedTriangle
+    GeometryTrait, GeometryType, LineTrait, UnimplementedGeometryCollection, UnimplementedMultiPoint, UnimplementedMultiPolygon, UnimplementedPolygon, UnimplementedRect, UnimplementedTriangle
 };
 
 

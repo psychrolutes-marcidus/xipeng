@@ -6,7 +6,6 @@ use geo_traits::{
     UnimplementedLineString, UnimplementedMultiLineString, UnimplementedMultiPoint,
     UnimplementedMultiPolygon, UnimplementedPolygon, UnimplementedRect, UnimplementedTriangle,
 };
-use proj::Transform;
 // use geo::algorithm::Geodesic;
 use crate::types::coordm::CoordM;
 use geo::algorithm::GeodesicMeasure;
