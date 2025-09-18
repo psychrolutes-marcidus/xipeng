@@ -1,8 +1,10 @@
+use linesonmaps::types::error::Error as LomError;
 use postgres::Error as PgError;
+use std::env::VarError;
+use std::net::AddrParseError;
 use std::num::ParseIntError;
 use thiserror::Error;
-use std::net::AddrParseError;
-use std::env::VarError;
+use wkb::error::WkbError;
 
 #[derive(Error, Debug)]
 pub enum DataError {
@@ -31,8 +33,10 @@ pub enum DatabaseError {
     IpAddrParse(#[from] AddrParseError),
     #[error("Missing Environment Variables")]
     MissingEnv(#[from] VarError),
-
-
+    #[error("Invalid WKB")]
+    WKBParse(#[from] WkbError),
+    #[error("Linestring creation")]
+    LinestringParse(#[from] LomError),
 }
 
 #[derive(Error, Debug)]

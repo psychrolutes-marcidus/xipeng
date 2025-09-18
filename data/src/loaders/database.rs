@@ -2,6 +2,8 @@ use crate::errors::DatabaseError;
 use crate::tables::*;
 use chrono::prelude::*;
 use postgres::{Client, Config, NoTls};
+use wkb::reader::read_wkb;
+use linesonmaps::types::linestringm::LineStringM;
 
 pub struct DbConn {
     pub conn: Client,
@@ -251,5 +253,13 @@ LIMIT 100",
     for row in result {
         let mmsi: i64 = row.get("mmsi");
         let traj: Vec<u8> = row.get("traj");
+
+        let wkb_data = read_wkb(traj.as_slice())?;
+        let lsm = LineStringM::try_from(wkb_data)?;
+
+        trajectories_table.mmsi.push(mmsi as u64);
+        trajectories_table.trajectory.push(traj);
     }
+
+    todo!()
 }

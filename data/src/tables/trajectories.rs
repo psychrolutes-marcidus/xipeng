@@ -18,7 +18,11 @@ impl Trajectories {
 
 impl Trajectories {
     pub fn search_by_key(&self, mmsi: MMSIType) -> Result<&LineStringM, TabelError> {
-        let index = self.mmsi.iter().position(|m| *m == mmsi).ok_or(TabelError::MissingKey)?;
+        let index = self
+            .mmsi
+            .iter()
+            .position(|m| *m == mmsi)
+            .ok_or(TabelError::MissingKey)?;
 
         Ok(&self.trajectory[index])
     }
