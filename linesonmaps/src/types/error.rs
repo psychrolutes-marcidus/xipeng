@@ -1,15 +1,17 @@
+use thiserror::Error;
+
 //TODO: remove once all error variants are discovered
 #[non_exhaustive]
-#[derive(PartialEq, Eq, Clone, Debug)]
+#[derive(PartialEq, Eq, Clone, Debug,Error)]
 pub enum Error {
-    /// A linestring must have length 0 or >=2
+    #[error("Illegal Linestring with length 1")]
     NumPoints,
-    /// Points must be ordered by time (increasing order), and no two points may have the same timestamp
+    #[error("Linestring points must temporally ordered")]
     Timestamp,
-    /// Tried to convert errneous geometry subtype
+    #[error("tried to convert to wrong geometry sub-type")]
     IncompatibleType,
-    ///Geometry was empty when not expected
+    #[error("Geometry unexpectedly empty")]
     Empty,
-    // Tried to read from non-existent dimension 
+    #[error("tried to read from a non-existent dimension")]
     Dimension,
 }
