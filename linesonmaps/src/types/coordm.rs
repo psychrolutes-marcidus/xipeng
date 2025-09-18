@@ -2,15 +2,23 @@ use geo_traits::CoordTrait;
 use geo_traits::GeometryTrait;
 use geo_traits::PointTrait;
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct CoordM {
+pub struct CoordM<const CRS: u64 = 4326> {
     pub x: f64,
     pub y: f64,
     pub m: f64,
 }
 
-impl CoordM {}
+impl<const CRS: u64> std::hash::Hash for CoordM<CRS>{
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.x.to_bits().hash(state);
+        self.y.to_bits().hash(state);
+        self.m.to_bits().hash(state);
+    }
+}
 
-impl From<(f64, f64, f64)> for CoordM {
+impl<const CRS: u64> CoordM<CRS> {}
+
+impl<const CRS: u64> From<(f64, f64, f64)> for CoordM<CRS> {
     fn from((first, second, third): (f64, f64, f64)) -> Self {
         CoordM {
             x: first,
@@ -20,7 +28,7 @@ impl From<(f64, f64, f64)> for CoordM {
     }
 }
 
-impl TryFrom<wkb::reader::Wkb<'_>> for CoordM {
+impl<const CRS: u64> TryFrom<wkb::reader::Wkb<'_>> for CoordM<CRS> {
     type Error = super::error::Error;
 
     fn try_from(value: wkb::reader::Wkb<'_>) -> Result<Self, Self::Error> {
@@ -38,7 +46,7 @@ impl TryFrom<wkb::reader::Wkb<'_>> for CoordM {
     }
 }
 
-impl CoordTrait for CoordM {
+impl<const CRS: u64> CoordTrait for CoordM<CRS> {
     type T = f64;
 
     fn dim(&self) -> geo_traits::Dimensions {
