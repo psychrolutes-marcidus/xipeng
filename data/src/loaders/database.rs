@@ -1,9 +1,10 @@
 use crate::errors::DatabaseError;
 use crate::tables::*;
 use chrono::prelude::*;
-use postgres::{Client, Config, NoTls};
-use wkb::reader::read_wkb;
 use linesonmaps::types::linestringm::LineStringM;
+use postgres::{Client, Config, NoTls};
+use std::collections::HashSet;
+use wkb::reader::read_wkb;
 
 pub struct DbConn {
     pub conn: Client,
@@ -37,9 +38,28 @@ impl DbConn {
         time_begin: NaiveDateTime,
         time_end: NaiveDateTime,
     ) -> Result<Ships, DatabaseError> {
-        let nav = fetch_nav_status(&mut self.conn, time_begin, time_end);
-        let draught = fetch_draught(&mut self.conn, time_begin, time_end);
-        todo!()
+        let traj = fetch_trajectories(&mut self.conn, time_begin, time_end)?;
+
+        let unique_mmsi: HashSet<i64> = traj.mmsi.into_iter().map(|x| x as i64).collect();
+
+        let unique_mmsi_vec: Vec<i64> = unique_mmsi.into_iter().collect();
+        let nav = fetch_nav_status(&mut self.conn, time_begin, time_end)?;
+        let draught = fetch_draught(&mut self.conn, time_begin, time_end)?;
+        let cog = fetch_cog(&mut self.conn, time_begin, time_end)?;
+        let dimensions = fetch_dimensions(&mut self.conn, &unique_mmsi_vec)?;
+        let gps_position = fetch_gps_position(&mut self.conn, &unique_mmsi_vec)?;
+        let rot = fetch_rot(&mut self.conn, time_begin, time_end)?;
+        let sog = fetch_sog(&mut self.conn, time_begin, time_end)?;
+
+        Ok(Ships {
+            nav_status: nav,
+            ship_draught: draught,
+            cog,
+            sog,
+            rot,
+            gps_position,
+            dimensions,
+        })
     }
 }
 
@@ -258,8 +278,82 @@ LIMIT 100",
         let lsm = LineStringM::try_from(wkb_data)?;
 
         trajectories_table.mmsi.push(mmsi as u64);
-        trajectories_table.trajectory.push(traj);
+        trajectories_table.trajectory.push(lsm);
     }
 
-    todo!()
+    Ok(trajectories_table)
+}
+
+fn fetch_dimensions(
+    conn: &mut Client,
+    mmsi: &[i64],
+) -> Result<dimensions::Dimensions, DatabaseError> {
+    let mut dimensions_table = dimensions::Dimensions::new();
+
+    let result = conn
+        .query(
+            "SELECT mmsi, width, length
+FROM program_data.dimensions
+WHERE mmsi = ANY($1)",
+            &[&mmsi],
+        )
+        .map_err(|e| DatabaseError::QueryError(e))?;
+
+    let size = result.len();
+
+    dimensions_table.mmsi.reserve(size);
+    dimensions_table.width.reserve(size);
+    dimensions_table.length.reserve(size);
+
+    for row in result {
+        let mmsi: i64 = row.get("mmsi");
+        let width: i16 = row.get("width");
+        let length: i16 = row.get("length");
+
+        dimensions_table.mmsi.push(mmsi as u64);
+        dimensions_table.width.push(width as u16);
+        dimensions_table.length.push(length as u16);
+    }
+
+    Ok(dimensions_table)
+}
+
+fn fetch_gps_position(
+    conn: &mut Client,
+    mmsi: &[i64],
+) -> Result<gps_position::GPSPosition, DatabaseError> {
+    let mut gps_position_table = gps_position::GPSPosition::new();
+
+    let result = conn
+        .query(
+            "SELECT mmsi, a, b, c, d
+FROM program_data.gps_position
+WHERE mmsi = ANY($1)",
+            &[&mmsi],
+        )
+        .map_err(|e| DatabaseError::QueryError(e))?;
+
+    let size = result.len();
+
+    gps_position_table.mmsi.reserve(size);
+    gps_position_table.a.reserve(size);
+    gps_position_table.b.reserve(size);
+    gps_position_table.c.reserve(size);
+    gps_position_table.d.reserve(size);
+
+    for row in result {
+        let mmsi: i64 = row.get("mmsi");
+        let a: i16 = row.get("a");
+        let b: i16 = row.get("b");
+        let c: i16 = row.get("c");
+        let d: i16 = row.get("d");
+
+        gps_position_table.mmsi.push(mmsi as u64);
+        gps_position_table.a.push(a as u16);
+        gps_position_table.b.push(b as u16);
+        gps_position_table.c.push(c as u16);
+        gps_position_table.d.push(d as u16);
+    }
+
+    Ok(gps_position_table)
 }

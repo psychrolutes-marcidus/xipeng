@@ -10,7 +10,7 @@ geo-types = "0.7.17"
 serde = { version = "1.0.219", features = ["derive"] }
 linesonmaps = { path = "../linesonmaps" }
 itertools = "0.14.0"
-postgres = { version = "0.19.10", features = ["with-chrono-0_4"] }
+postgres = { version = "0.19.10", features = ["array-impls", "with-chrono-0_4"] }
 thiserror = "2.0.16"
 wkb = "0.9.0"
 
