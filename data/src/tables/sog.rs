@@ -25,13 +25,13 @@ impl Default for Sog {
 }
 
 impl Sog {
-    pub fn search_by_key(&self, mmsi: MMSIType, time: TimeType) -> Result<SogType, TabelError> {
+    pub fn search_by_key(&self, mmsi: MMSIType, time: TimeType) -> Result<SogType, TableError> {
         let index = self
             .mmsi
             .iter()
             .zip(self.time.iter())
             .position(|(m, t)| *m == mmsi && *t == time)
-            .ok_or(TabelError::MissingKey)?;
+            .ok_or(TableError::MissingKey)?;
 
         Ok(self.sog[index])
     }

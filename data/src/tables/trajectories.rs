@@ -23,12 +23,12 @@ impl Default for Trajectories {
 }
 
 impl Trajectories {
-    pub fn search_by_key(&self, mmsi: MMSIType) -> Result<&LineStringM, TabelError> {
+    pub fn search_by_key(&self, mmsi: MMSIType) -> Result<&LineStringM, TableError> {
         let index = self
             .mmsi
             .iter()
             .position(|m| *m == mmsi)
-            .ok_or(TabelError::MissingKey)?;
+            .ok_or(TableError::MissingKey)?;
 
         Ok(&self.trajectory[index])
     }

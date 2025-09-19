@@ -25,13 +25,13 @@ impl Default for Rot {
 }
 
 impl Rot {
-    pub fn search_by_key(&self, mmsi: MMSIType, time: TimeType) -> Result<RotType, TabelError> {
+    pub fn search_by_key(&self, mmsi: MMSIType, time: TimeType) -> Result<RotType, TableError> {
         let index = self
             .mmsi
             .iter()
             .zip(self.time.iter())
             .position(|(m, t)| *m == mmsi && *t == time)
-            .ok_or(TabelError::MissingKey)?;
+            .ok_or(TableError::MissingKey)?;
 
         Ok(self.rot[index])
     }

@@ -11,7 +11,7 @@ pub enum DataError {
     #[error("Database Error")]
     Database(#[from] DatabaseError),
     #[error("Table Error")]
-    Table(#[from] TabelError),
+    Table(#[from] TableError),
 }
 
 #[derive(Error, Debug)]
@@ -33,7 +33,7 @@ pub enum DatabaseError {
 }
 
 #[derive(Error, Debug)]
-pub enum TabelError {
+pub enum TableError {
     #[error("Could not find key in table")]
     MissingKey,
     #[error("Key already exists in table")]

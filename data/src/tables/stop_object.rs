@@ -27,13 +27,13 @@ impl Default for StopObject {
 }
 
 impl StopObject {
-    pub fn search_by_key(&self, mmsi: MMSIType, time: TimeType) -> Result<&Geometry, TabelError> {
+    pub fn search_by_key(&self, mmsi: MMSIType, time: TimeType) -> Result<&Geometry, TableError> {
         let index = self
             .mmsi
             .iter()
             .zip(self.time_begin.iter().zip(self.time_end.iter()))
             .position(|(m, (tb, te))| *m == mmsi && *tb <= time && *te >= time)
-            .ok_or(TabelError::MissingKey)?;
+            .ok_or(TableError::MissingKey)?;
 
         Ok(&self.geom[index])
     }

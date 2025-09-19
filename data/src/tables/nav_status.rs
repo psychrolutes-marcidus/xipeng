@@ -29,13 +29,13 @@ impl NavStatus {
         &self,
         mmsi: MMSIType,
         time: TimeType,
-    ) -> Result<NavStatusValue, TabelError> {
+    ) -> Result<NavStatusValue, TableError> {
         let index = self
             .mmsi
             .iter()
             .zip(self.time_begin.iter().zip(self.time_end.iter()))
             .position(|(m, (tb, te))| *m == mmsi && *tb <= time && *te >= time)
-            .ok_or(TabelError::MissingKey)?;
+            .ok_or(TableError::MissingKey)?;
 
         Ok(self.nav_status[index])
     }

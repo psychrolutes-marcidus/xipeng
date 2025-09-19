@@ -37,13 +37,13 @@ impl GPSPosition {
             dimensions::DimensionType,
             dimensions::DimensionType,
         ),
-        TabelError,
+        TableError,
     > {
         let index = self
             .mmsi
             .iter()
             .position(|x| *x == mmsi)
-            .ok_or(TabelError::MissingKey)?;
+            .ok_or(TableError::MissingKey)?;
 
         Ok((self.a[index], self.b[index], self.c[index], self.d[index]))
     }

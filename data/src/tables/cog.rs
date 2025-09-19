@@ -25,13 +25,13 @@ impl Default for Cog {
 }
 
 impl Cog {
-    pub fn search_by_key(&self, mmsi: MMSIType, time: TimeType) -> Result<CogType, TabelError> {
+    pub fn search_by_key(&self, mmsi: MMSIType, time: TimeType) -> Result<CogType, TableError> {
         let index = self
             .mmsi
             .iter()
             .zip(self.time.iter())
             .position(|(m, t)| *m == mmsi && *t == time)
-            .ok_or(TabelError::MissingKey)?;
+            .ok_or(TableError::MissingKey)?;
 
         Ok(self.cog[index])
     }
