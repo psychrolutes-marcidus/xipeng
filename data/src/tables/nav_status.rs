@@ -57,16 +57,16 @@ pub enum NavStatusValue {
 
 pub fn nav_status_converter(field: &str) -> NavStatusValue {
     match field {
-        "Under way using engine" => NavStatusValue::UnderWayUsingEngine,
-        "At anchor" => NavStatusValue::Anchored,
-        "Not under command" => NavStatusValue::NotUnderCommand,
-        "Restricted maneuverability" => NavStatusValue::RestrictedManeuverability,
-        "Constrained by her draught" => NavStatusValue::ConstrainedByHerDraught,
-        "Moored" => NavStatusValue::Moord,
-        "Aground" => NavStatusValue::Aground,
-        "Engaged in fishing" => NavStatusValue::EngagedInFishingActivity,
-        "Under way sailing" => NavStatusValue::UnderwaySailing,
-        "AIS-SART (active)" => NavStatusValue::AISSART,
+        "aground" => NavStatusValue::Aground,
+        "ais-sart (active)" => NavStatusValue::AISSART,
+        "at anchor" => NavStatusValue::Anchored,
+        "constrained by her draught" => NavStatusValue::ConstrainedByHerDraught,
+        "engaged in fishing" => NavStatusValue::EngagedInFishingActivity,
+        "moored" => NavStatusValue::Moord,
+        "not under command" => NavStatusValue::NotUnderCommand,
+        "restricted maneuverability" => NavStatusValue::RestrictedManeuverability,
+        "under way sailing" => NavStatusValue::UnderwaySailing,
+        "under way using engine" => NavStatusValue::UnderWayUsingEngine,
         _ => unreachable!(),
     }
 }

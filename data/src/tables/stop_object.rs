@@ -6,7 +6,7 @@ pub struct StopObject {
     pub mmsi: Vec<MMSIType>,
     pub time_begin: Vec<TimeType>,
     pub time_end: Vec<TimeType>,
-    pub geom: Vec<Geometry>,
+    pub geom: Vec<Geometry>, // It's a placeholder type
 }
 
 impl StopObject {
