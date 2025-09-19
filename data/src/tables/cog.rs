@@ -18,6 +18,12 @@ impl Cog {
     }
 }
 
+impl Default for Cog {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Cog {
     pub fn search_by_key(&self, mmsi: MMSIType, time: TimeType) -> Result<CogType, TabelError> {
         let index = self
@@ -30,3 +36,4 @@ impl Cog {
         Ok(self.cog[index])
     }
 }
+

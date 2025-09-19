@@ -20,12 +20,32 @@ impl GPSPosition {
     }
 }
 
+impl Default for GPSPosition {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl GPSPosition {
-    pub fn search_by_key(&self, mmsi: MMSIType) -> Result<(dimensions::DimensionType, dimensions::DimensionType, dimensions::DimensionType, dimensions::DimensionType), TabelError> {
-        let index = self.mmsi.iter().position(|x| *x == mmsi).ok_or(TabelError::MissingKey)?;
+    pub fn search_by_key(
+        &self,
+        mmsi: MMSIType,
+    ) -> Result<
+        (
+            dimensions::DimensionType,
+            dimensions::DimensionType,
+            dimensions::DimensionType,
+            dimensions::DimensionType,
+        ),
+        TabelError,
+    > {
+        let index = self
+            .mmsi
+            .iter()
+            .position(|x| *x == mmsi)
+            .ok_or(TabelError::MissingKey)?;
 
         Ok((self.a[index], self.b[index], self.c[index], self.d[index]))
     }
 }
-
 

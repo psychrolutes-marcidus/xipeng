@@ -16,7 +16,13 @@ impl StopObject {
             time_begin: Vec::new(),
             time_end: Vec::new(),
             geom: Vec::new(),
-       }
+        }
+    }
+}
+
+impl Default for StopObject {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

@@ -18,6 +18,12 @@ impl Dimensions {
     }
 }
 
+impl Default for Dimensions {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Dimensions {
     pub fn search_by_key(
         &self,

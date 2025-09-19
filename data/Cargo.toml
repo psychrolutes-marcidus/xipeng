@@ -5,9 +5,7 @@ edition = "2024"
 
 [dependencies]
 chrono = { version = "0.4.41", features = ["serde"] }
-csv = "1.3.1"
 geo-types = "0.7.17"
-serde = { version = "1.0.219", features = ["derive"] }
 linesonmaps = { path = "../linesonmaps" }
 itertools = "0.14.0"
 postgres = { version = "0.19.10", features = ["array-impls", "with-chrono-0_4"] }

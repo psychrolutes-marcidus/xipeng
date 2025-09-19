@@ -15,14 +15,25 @@ impl Draught {
             mmsi: Vec::new(),
             time_begin: Vec::new(),
             time_end: Vec::new(),
-            draught: Vec::new() ,
-       }
+            draught: Vec::new(),
+        }
+    }
+}
+
+impl Default for Draught {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
 impl Draught {
     pub fn search_by_key(&self, mmsi: MMSIType, time: TimeType) -> Result<DraughtType, TabelError> {
-        let index = self.mmsi.iter().zip(self.time_begin.iter().zip(self.time_end.iter())).position(|(m, (tb, te))| *m == mmsi && *tb <= time && *te >= time).ok_or(TabelError::MissingKey)?;
+        let index = self
+            .mmsi
+            .iter()
+            .zip(self.time_begin.iter().zip(self.time_end.iter()))
+            .position(|(m, (tb, te))| *m == mmsi && *tb <= time && *te >= time)
+            .ok_or(TabelError::MissingKey)?;
 
         Ok(self.draught[index])
     }

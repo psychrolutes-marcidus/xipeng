@@ -14,7 +14,13 @@ impl Sog {
             mmsi: Vec::new(),
             time: Vec::new(),
             sog: Vec::new(),
-       }
+        }
+    }
+}
+
+impl Default for Sog {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

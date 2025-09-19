@@ -10,7 +10,17 @@ pub struct Rot {
 
 impl Rot {
     pub fn new() -> Self {
-        Self { mmsi: Vec::new(), time: Vec::new(), rot: Vec::new() }
+        Self {
+            mmsi: Vec::new(),
+            time: Vec::new(),
+            rot: Vec::new(),
+        }
+    }
+}
+
+impl Default for Rot {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

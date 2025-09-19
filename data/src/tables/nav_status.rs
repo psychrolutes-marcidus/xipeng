@@ -18,6 +18,12 @@ impl NavStatus {
     }
 }
 
+impl Default for NavStatus {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl NavStatus {
     pub fn search_by_key(
         &self,
@@ -49,18 +55,18 @@ pub enum NavStatusValue {
     AISSART,
 }
 
-pub fn nav_status_converter(field: &str) -> Option<NavStatusValue> {
+pub fn nav_status_converter(field: &str) -> NavStatusValue {
     match field {
-        "Under way using engine" => Some(NavStatusValue::UnderWayUsingEngine),
-        "At anchor" => Some(NavStatusValue::Anchored),
-        "Not under command" => Some(NavStatusValue::NotUnderCommand),
-        "Restricted maneuverability" => Some(NavStatusValue::RestrictedManeuverability),
-        "Constrained by her draught" => Some(NavStatusValue::ConstrainedByHerDraught),
-        "Moored" => Some(NavStatusValue::Moord),
-        "Aground" => Some(NavStatusValue::Aground),
-        "Engaged in fishing" => Some(NavStatusValue::EngagedInFishingActivity),
-        "Under way sailing" => Some(NavStatusValue::UnderwaySailing),
-        "AIS-SART (active)" => Some(NavStatusValue::AISSART),
-        _ => None,
+        "Under way using engine" => NavStatusValue::UnderWayUsingEngine,
+        "At anchor" => NavStatusValue::Anchored,
+        "Not under command" => NavStatusValue::NotUnderCommand,
+        "Restricted maneuverability" => NavStatusValue::RestrictedManeuverability,
+        "Constrained by her draught" => NavStatusValue::ConstrainedByHerDraught,
+        "Moored" => NavStatusValue::Moord,
+        "Aground" => NavStatusValue::Aground,
+        "Engaged in fishing" => NavStatusValue::EngagedInFishingActivity,
+        "Under way sailing" => NavStatusValue::UnderwaySailing,
+        "AIS-SART (active)" => NavStatusValue::AISSART,
+        _ => unreachable!(),
     }
 }

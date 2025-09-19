@@ -1,6 +1,5 @@
 use crate::errors::DatabaseError;
 use crate::tables::*;
-use chrono::prelude::*;
 use linesonmaps::types::linestringm::LineStringM;
 use postgres::{Client, Config, NoTls};
 use std::collections::HashSet;
@@ -27,9 +26,7 @@ impl DbConn {
         db_conf.password(password);
         db_conf.dbname(&db_name);
 
-        let client = db_conf
-            .connect(NoTls)
-            .map_err(|e| DatabaseError::Connect(e))?;
+        let client = db_conf.connect(NoTls).map_err(DatabaseError::Connect)?;
         Ok(Self { conn: client })
     }
 
@@ -40,7 +37,7 @@ impl DbConn {
     ) -> Result<Ships, DatabaseError> {
         let traj = fetch_trajectories(&mut self.conn, time_begin, time_end)?;
 
-        let unique_mmsi: HashSet<i32> = traj.mmsi.iter().map(|x| *x as i32).collect();
+        let unique_mmsi: HashSet<i32> = traj.mmsi.iter().copied().collect();
 
         let unique_mmsi_vec: Vec<i32> = unique_mmsi.into_iter().collect();
         let nav = fetch_nav_status(&mut self.conn, time_begin, time_end)?;
@@ -96,13 +93,11 @@ fn fetch_nav_status(
         let status: String = row.get("status_name");
 
         let status_parsed = nav_status::nav_status_converter(&status);
-
-        if status_parsed.is_some() {
             nav_status_table.mmsi.push(mmsi);
             nav_status_table.time_begin.push(time_begin);
             nav_status_table.time_end.push(time_end);
-            nav_status_table.nav_status.push(status_parsed.unwrap());
-        }
+            nav_status_table.nav_status.push(status_parsed);
+
     }
 
     Ok(nav_status_table)

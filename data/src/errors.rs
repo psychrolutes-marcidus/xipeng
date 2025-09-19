@@ -14,13 +14,6 @@ pub enum DataError {
     Table(#[from] TabelError),
 }
 
-// #[derive(Error, Debug)]
-// pub enum CsvError {
-//     CouldNotOpenFile,
-//     Deserialize,
-//     TimeConvertError,
-// }
-
 #[derive(Error, Debug)]
 pub enum DatabaseError {
     #[error("Database connection error")]

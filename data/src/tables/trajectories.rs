@@ -16,6 +16,12 @@ impl Trajectories {
     }
 }
 
+impl Default for Trajectories {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Trajectories {
     pub fn search_by_key(&self, mmsi: MMSIType) -> Result<&LineStringM, TabelError> {
         let index = self
