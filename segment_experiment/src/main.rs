@@ -6,11 +6,13 @@ use linesonmaps::types::*;
 use rayon::prelude::*;
 
 type LineString = LineStringM<4326>;
-type MMSI = i64;
+type MMSI = i32;
 
 // output: segmented linestrings (with MMSI), number of segments, average length of segments all across different time parameters
 fn main() {
     let linestrings: Vec<(MMSI, LineString)> = vec![];
+
+    //TODO get trajectories, sorted by length and/or number of points
 
     const THRESHOLDS: [f64; 6] = [5., 10., 15., 30., 60., 120.];
     let collected = linestrings
