@@ -4,7 +4,7 @@ use linesonmaps::types::linestringm::LineStringM;
 
 pub struct Trajectories {
     pub mmsi: Vec<MMSIType>,
-    pub trajectory: Vec<LineStringM>, // Change this to the custom linestringm type.
+    pub trajectory: Vec<LineStringM<4326>>, // Change this to the custom linestringm type.
 }
 
 impl Trajectories {
