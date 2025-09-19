@@ -10,14 +10,14 @@ type MMSI = i64;
 
 // output: segmented linestrings (with MMSI), number of segments, average length of segments all across different time parameters
 fn main() {
-    let linestrings: Vec<LineString> = vec![];
+    let linestrings: Vec<(MMSI, LineString)> = vec![];
 
     const THRESHOLDS: [f64; 6] = [5., 10., 15., 30., 60., 120.];
     let collected = linestrings
         .par_iter()
-        .map(|ls| {
+        .map(|(mmsi, ls)| {
             let c = THRESHOLDS.map(|t| segment_linestring(ls.clone(), |f, s| time_dist(f, s, t)));
-            c
+            (mmsi, c)
         })
         // .inspect(|measures| {
         //     println!(
@@ -36,9 +36,9 @@ fn main() {
         //             .collect::<Vec<_>>()
         //     )
         // })
-        .map(|meas| {
+        .map(|(mmsi, meas)| {
             format!(
-                "segments created = {0:?}\t average length = {1:?}\n",
+                "MMSI={2}\t segments created = {0:?}\t average length = {1:?}\n",
                 meas.iter()
                     .map(|mls| mls.num_line_strings())
                     .collect::<Vec<_>>(),
@@ -48,14 +48,15 @@ fn main() {
                         .map(|ls| ls.0.len())
                         .fold(0, |acc, x| acc + x)
                         / mls.num_line_strings())
-                    .collect::<Vec<_>>()
+                    .collect::<Vec<_>>(),
+                mmsi
             )
         })
-        .collect::<Vec<_>>().concat();
-        let p = "segment_experiment_results.txt";
-        std::fs::write(p, collected.as_str()).unwrap();
-        println!("output experiment results to {0}",p);
-
+        .collect::<Vec<_>>()
+        .concat();
+    let p = "segment_experiment_results.txt";
+    std::fs::write(p, collected.as_str()).unwrap();
+    println!("output experiment results to {0}", p);
 }
 
 const fn time_dist(first: PointM, second: PointM, thres: f64) -> bool {
