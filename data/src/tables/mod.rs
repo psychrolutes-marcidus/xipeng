@@ -26,5 +26,6 @@ pub struct Ships {
     pub rot: rot::Rot,
     pub gps_position: gps_position::GPSPosition,
     pub dimensions: dimensions::Dimensions,
+    pub trajectories: trajectories::Trajectories,
 }
 

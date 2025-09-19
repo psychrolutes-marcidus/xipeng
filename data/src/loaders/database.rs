@@ -40,7 +40,7 @@ impl DbConn {
     ) -> Result<Ships, DatabaseError> {
         let traj = fetch_trajectories(&mut self.conn, time_begin, time_end)?;
 
-        let unique_mmsi: HashSet<i32> = traj.mmsi.into_iter().map(|x| x as i32).collect();
+        let unique_mmsi: HashSet<i32> = traj.mmsi.iter().map(|x| *x as i32).collect();
 
         let unique_mmsi_vec: Vec<i32> = unique_mmsi.into_iter().collect();
         let nav = fetch_nav_status(&mut self.conn, time_begin, time_end)?;
@@ -59,6 +59,7 @@ impl DbConn {
             rot,
             gps_position,
             dimensions,
+            trajectories: traj,
         })
     }
 }
