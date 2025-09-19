@@ -48,4 +48,3 @@ impl GPSPosition {
         Ok((self.a[index], self.b[index], self.c[index], self.d[index]))
     }
 }
-

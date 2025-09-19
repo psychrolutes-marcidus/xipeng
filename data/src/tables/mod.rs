@@ -24,4 +24,3 @@ pub struct Ships {
     pub dimensions: dimensions::Dimensions,
     pub trajectories: trajectories::Trajectories,
 }
-

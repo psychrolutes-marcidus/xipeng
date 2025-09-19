@@ -36,4 +36,3 @@ impl Cog {
         Ok(self.cog[index])
     }
 }
-

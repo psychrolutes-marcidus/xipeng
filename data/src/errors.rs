@@ -41,4 +41,3 @@ pub enum TableError {
     #[error("Error loading data into table")]
     LoaderError,
 }
-

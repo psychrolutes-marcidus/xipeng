@@ -93,11 +93,10 @@ fn fetch_nav_status(
         let status: String = row.get("status_name");
 
         let status_parsed = nav_status::nav_status_converter(&status);
-            nav_status_table.mmsi.push(mmsi);
-            nav_status_table.time_begin.push(time_begin);
-            nav_status_table.time_end.push(time_end);
-            nav_status_table.nav_status.push(status_parsed);
-
+        nav_status_table.mmsi.push(mmsi);
+        nav_status_table.time_begin.push(time_begin);
+        nav_status_table.time_end.push(time_end);
+        nav_status_table.nav_status.push(status_parsed);
     }
 
     Ok(nav_status_table)

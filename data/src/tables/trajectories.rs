@@ -33,4 +33,3 @@ impl Trajectories {
         Ok(&self.trajectory[index])
     }
 }
-
