@@ -15,8 +15,8 @@ pub mod sog;
 pub mod stop_object;
 pub mod trajectories;
 
-type TimeType = NaiveDateTime;
-type MMSIType = u64;
+type TimeType = DateTime<Utc>;
+type MMSIType = i32;
 
 pub struct Ships {
     pub nav_status: nav_status::NavStatus,

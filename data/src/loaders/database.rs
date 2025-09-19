@@ -35,14 +35,14 @@ impl DbConn {
 
     pub fn fetch_data(
         &mut self,
-        time_begin: NaiveDateTime,
-        time_end: NaiveDateTime,
+        time_begin: DateTime<Utc>,
+        time_end: DateTime<Utc>,
     ) -> Result<Ships, DatabaseError> {
         let traj = fetch_trajectories(&mut self.conn, time_begin, time_end)?;
 
-        let unique_mmsi: HashSet<i64> = traj.mmsi.into_iter().map(|x| x as i64).collect();
+        let unique_mmsi: HashSet<i32> = traj.mmsi.into_iter().map(|x| x as i32).collect();
 
-        let unique_mmsi_vec: Vec<i64> = unique_mmsi.into_iter().collect();
+        let unique_mmsi_vec: Vec<i32> = unique_mmsi.into_iter().collect();
         let nav = fetch_nav_status(&mut self.conn, time_begin, time_end)?;
         let draught = fetch_draught(&mut self.conn, time_begin, time_end)?;
         let cog = fetch_cog(&mut self.conn, time_begin, time_end)?;
@@ -65,8 +65,8 @@ impl DbConn {
 
 fn fetch_nav_status(
     conn: &mut Client,
-    time_begin: NaiveDateTime,
-    time_end: NaiveDateTime,
+    time_begin: DateTime<Utc>,
+    time_end: DateTime<Utc>,
 ) -> Result<nav_status::NavStatus, DatabaseError> {
     let mut nav_status_table: nav_status::NavStatus = nav_status::NavStatus::new();
     let result = conn
@@ -77,7 +77,10 @@ fn fetch_nav_status(
                     time_end >= $1 AND time_begin <= $2",
             &[&time_begin, &time_end],
         )
-        .map_err(|e| DatabaseError::QueryError(e))?;
+        .map_err(|e| DatabaseError::QueryError {
+            db_error: e,
+            msg: String::from("nav_status_query"),
+        })?;
 
     let size = result.len();
     nav_status_table.mmsi.reserve(size);
@@ -86,15 +89,15 @@ fn fetch_nav_status(
     nav_status_table.nav_status.reserve(size);
 
     for row in result {
-        let mmsi: i64 = row.get("mmsi");
-        let time_begin: NaiveDateTime = row.get("time_begin");
-        let time_end: NaiveDateTime = row.get("time_end");
+        let mmsi: i32 = row.get("mmsi");
+        let time_begin: DateTime<Utc> = row.get("time_begin");
+        let time_end: DateTime<Utc> = row.get("time_end");
         let status: String = row.get("status_name");
 
         let status_parsed = nav_status::nav_status_converter(&status);
 
         if status_parsed.is_some() {
-            nav_status_table.mmsi.push(mmsi as u64);
+            nav_status_table.mmsi.push(mmsi);
             nav_status_table.time_begin.push(time_begin);
             nav_status_table.time_end.push(time_end);
             nav_status_table.nav_status.push(status_parsed.unwrap());
@@ -106,8 +109,8 @@ fn fetch_nav_status(
 
 fn fetch_draught(
     conn: &mut Client,
-    time_begin: NaiveDateTime,
-    time_end: NaiveDateTime,
+    time_begin: DateTime<Utc>,
+    time_end: DateTime<Utc>,
 ) -> Result<ship_draught::Draught, DatabaseError> {
     let mut draught_table: ship_draught::Draught = ship_draught::Draught::new();
 
@@ -120,7 +123,10 @@ fn fetch_draught(
                                 TIME_END >= $1 AND TIME_BEGIN <= $2",
             &[&time_begin, &time_end],
         )
-        .map_err(|e| DatabaseError::QueryError(e))?;
+        .map_err(|e| DatabaseError::QueryError {
+            db_error: e,
+            msg: String::from("draught query"),
+        })?;
 
     let size = result.len();
 
@@ -130,12 +136,12 @@ fn fetch_draught(
     draught_table.draught.reserve(size);
 
     for row in result {
-        let mmsi: i64 = row.get("mmsi");
-        let time_begin: NaiveDateTime = row.get("time_begin");
-        let time_end: NaiveDateTime = row.get("time_end");
+        let mmsi: i32 = row.get("mmsi");
+        let time_begin: DateTime<Utc> = row.get("time_begin");
+        let time_end: DateTime<Utc> = row.get("time_end");
         let draught: f32 = row.get("draught");
 
-        draught_table.mmsi.push(mmsi as u64);
+        draught_table.mmsi.push(mmsi);
         draught_table.time_begin.push(time_begin);
         draught_table.time_end.push(time_end);
         draught_table.draught.push(draught);
@@ -146,8 +152,8 @@ fn fetch_draught(
 
 fn fetch_cog(
     conn: &mut Client,
-    time_begin: NaiveDateTime,
-    time_end: NaiveDateTime,
+    time_begin: DateTime<Utc>,
+    time_end: DateTime<Utc>,
 ) -> Result<cog::Cog, DatabaseError> {
     let mut cog_table: cog::Cog = cog::Cog::new();
 
@@ -158,7 +164,10 @@ fn fetch_cog(
             WHERE timestamp >= $1 AND timestamp <= $2",
             &[&time_begin, &time_end],
         )
-        .map_err(|e| DatabaseError::QueryError(e))?;
+        .map_err(|e| DatabaseError::QueryError {
+            db_error: e,
+            msg: String::from("cog query"),
+        })?;
 
     let size = result.len();
 
@@ -167,10 +176,10 @@ fn fetch_cog(
     cog_table.cog.reserve(size);
 
     for row in result {
-        let mmsi: i64 = row.get("mmsi");
-        let time: NaiveDateTime = row.get("timestamp");
+        let mmsi: i32 = row.get("mmsi");
+        let time: DateTime<Utc> = row.get("timestamp");
         let cog: f32 = row.get("cog");
-        cog_table.mmsi.push(mmsi as u64);
+        cog_table.mmsi.push(mmsi);
         cog_table.time.push(time);
         cog_table.cog.push(cog);
     }
@@ -180,8 +189,8 @@ fn fetch_cog(
 
 fn fetch_sog(
     conn: &mut Client,
-    time_begin: NaiveDateTime,
-    time_end: NaiveDateTime,
+    time_begin: DateTime<Utc>,
+    time_end: DateTime<Utc>,
 ) -> Result<sog::Sog, DatabaseError> {
     let mut sog_table: sog::Sog = sog::Sog::new();
 
@@ -192,7 +201,10 @@ fn fetch_sog(
         WHERE timestamp >= $1 AND timestamp <= $2",
             &[&time_begin, &time_end],
         )
-        .map_err(|e| DatabaseError::QueryError(e))?;
+        .map_err(|e| DatabaseError::QueryError {
+            db_error: e,
+            msg: String::from("sog query"),
+        })?;
 
     let size = result.len();
 
@@ -201,10 +213,10 @@ fn fetch_sog(
     sog_table.sog.reserve(size);
 
     for row in result {
-        let mmsi: i64 = row.get("mmsi");
-        let time: NaiveDateTime = row.get("timestamp");
+        let mmsi: i32 = row.get("mmsi");
+        let time: DateTime<Utc> = row.get("timestamp");
         let sog: f32 = row.get("sog");
-        sog_table.mmsi.push(mmsi as u64);
+        sog_table.mmsi.push(mmsi);
         sog_table.time.push(time);
         sog_table.sog.push(sog);
     }
@@ -213,8 +225,8 @@ fn fetch_sog(
 
 fn fetch_rot(
     conn: &mut Client,
-    time_begin: NaiveDateTime,
-    time_end: NaiveDateTime,
+    time_begin: DateTime<Utc>,
+    time_end: DateTime<Utc>,
 ) -> Result<rot::Rot, DatabaseError> {
     let mut rot_table: rot::Rot = rot::Rot::new();
 
@@ -225,7 +237,10 @@ fn fetch_rot(
     WHERE timestamp >= $1 AND timestamp <= $2",
             &[&time_begin, &time_end],
         )
-        .map_err(|e| DatabaseError::QueryError(e))?;
+        .map_err(|e| DatabaseError::QueryError {
+            db_error: e,
+            msg: String::from("rot query"),
+        })?;
 
     let size = result.len();
 
@@ -234,10 +249,10 @@ fn fetch_rot(
     rot_table.rot.reserve(size);
 
     for row in result {
-        let mmsi: i64 = row.get("mmsi");
-        let time: NaiveDateTime = row.get("timestamp");
+        let mmsi: i32 = row.get("mmsi");
+        let time: DateTime<Utc> = row.get("timestamp");
         let rot: f32 = row.get("rot");
-        rot_table.mmsi.push(mmsi as u64);
+        rot_table.mmsi.push(mmsi);
         rot_table.time.push(time);
         rot_table.rot.push(rot);
     }
@@ -247,8 +262,8 @@ fn fetch_rot(
 
 fn fetch_trajectories(
     conn: &mut Client,
-    time_begin: NaiveDateTime,
-    time_end: NaiveDateTime,
+    time_begin: DateTime<Utc>,
+    time_end: DateTime<Utc>,
 ) -> Result<trajectories::Trajectories, DatabaseError> {
     let mut trajectories_table = trajectories::Trajectories::new();
 
@@ -256,14 +271,16 @@ fn fetch_trajectories(
         .query(
             "SELECT mmsi, ST_AsBinary(ST_FilterByM(traj, $1, $2, true), 'NDR') as traj
 FROM PROGRAM_DATA.trajectories
-WHERE ST_IsEmpty(ST_FilterByM(traj, $1, $2) = false
-LIMIT 100",
+WHERE ST_IsEmpty(ST_FilterByM(traj, $1, $2)) = false;",
             &[
-                &(time_begin.and_utc().timestamp() as f64),
-                &(time_end.and_utc().timestamp() as f64),
+                &(time_begin.timestamp() as f64),
+                &(time_end.timestamp() as f64),
             ],
         )
-        .map_err(|e| DatabaseError::QueryError(e))?;
+        .map_err(|e| DatabaseError::QueryError {
+            db_error: e,
+            msg: String::from("trajectories query"),
+        })?;
 
     let size = result.len();
 
@@ -271,13 +288,13 @@ LIMIT 100",
     trajectories_table.trajectory.reserve(size);
 
     for row in result {
-        let mmsi: i64 = row.get("mmsi");
+        let mmsi: i32 = row.get("mmsi");
         let traj: Vec<u8> = row.get("traj");
 
         let wkb_data = read_wkb(traj.as_slice())?;
         let lsm = LineStringM::try_from(wkb_data)?;
 
-        trajectories_table.mmsi.push(mmsi as u64);
+        trajectories_table.mmsi.push(mmsi);
         trajectories_table.trajectory.push(lsm);
     }
 
@@ -286,7 +303,7 @@ LIMIT 100",
 
 fn fetch_dimensions(
     conn: &mut Client,
-    mmsi: &[i64],
+    mmsi: &[i32],
 ) -> Result<dimensions::Dimensions, DatabaseError> {
     let mut dimensions_table = dimensions::Dimensions::new();
 
@@ -297,7 +314,10 @@ FROM program_data.dimensions
 WHERE mmsi = ANY($1)",
             &[&mmsi],
         )
-        .map_err(|e| DatabaseError::QueryError(e))?;
+        .map_err(|e| DatabaseError::QueryError {
+            db_error: e,
+            msg: String::from("dimensions query"),
+        })?;
 
     let size = result.len();
 
@@ -306,13 +326,13 @@ WHERE mmsi = ANY($1)",
     dimensions_table.length.reserve(size);
 
     for row in result {
-        let mmsi: i64 = row.get("mmsi");
-        let width: i16 = row.get("width");
-        let length: i16 = row.get("length");
+        let mmsi: i32 = row.get("mmsi");
+        let width: f64 = row.get("width");
+        let length: f64 = row.get("length");
 
-        dimensions_table.mmsi.push(mmsi as u64);
-        dimensions_table.width.push(width as u16);
-        dimensions_table.length.push(length as u16);
+        dimensions_table.mmsi.push(mmsi);
+        dimensions_table.width.push(width);
+        dimensions_table.length.push(length);
     }
 
     Ok(dimensions_table)
@@ -320,7 +340,7 @@ WHERE mmsi = ANY($1)",
 
 fn fetch_gps_position(
     conn: &mut Client,
-    mmsi: &[i64],
+    mmsi: &[i32],
 ) -> Result<gps_position::GPSPosition, DatabaseError> {
     let mut gps_position_table = gps_position::GPSPosition::new();
 
@@ -331,7 +351,10 @@ FROM program_data.gps_position
 WHERE mmsi = ANY($1)",
             &[&mmsi],
         )
-        .map_err(|e| DatabaseError::QueryError(e))?;
+        .map_err(|e| DatabaseError::QueryError {
+            db_error: e,
+            msg: String::from("gps_position query"),
+        })?;
 
     let size = result.len();
 
@@ -342,18 +365,38 @@ WHERE mmsi = ANY($1)",
     gps_position_table.d.reserve(size);
 
     for row in result {
-        let mmsi: i64 = row.get("mmsi");
-        let a: i16 = row.get("a");
-        let b: i16 = row.get("b");
-        let c: i16 = row.get("c");
-        let d: i16 = row.get("d");
+        let mmsi: i32 = row.get("mmsi");
+        let a: f64 = row.get("a");
+        let b: f64 = row.get("b");
+        let c: f64 = row.get("c");
+        let d: f64 = row.get("d");
 
-        gps_position_table.mmsi.push(mmsi as u64);
-        gps_position_table.a.push(a as u16);
-        gps_position_table.b.push(b as u16);
-        gps_position_table.c.push(c as u16);
-        gps_position_table.d.push(d as u16);
+        gps_position_table.mmsi.push(mmsi);
+        gps_position_table.a.push(a);
+        gps_position_table.b.push(b);
+        gps_position_table.c.push(c);
+        gps_position_table.d.push(d);
     }
 
     Ok(gps_position_table)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn trajectories_does_not_crash() {
+        dotenvy::dotenv().unwrap();
+
+        let mut db = DbConn::new().unwrap();
+
+        let from =
+            DateTime::parse_from_str("2024-01-01 00:00:00 +0000", "%Y-%m-%d %H:%M:%S%.3f %z")
+                .unwrap();
+        let to = DateTime::parse_from_str("2024-01-01 01:00:00 +0000", "%Y-%m-%d %H:%M:%S%.3f %z")
+            .unwrap();
+
+        db.fetch_data(from.into(), to.into()).unwrap();
+    }
 }

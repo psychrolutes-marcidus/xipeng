@@ -1,9 +1,9 @@
 use super::*;
 
 pub struct NavStatus {
-    pub mmsi: Vec<u64>,
-    pub time_begin: Vec<NaiveDateTime>,
-    pub time_end: Vec<NaiveDateTime>,
+    pub mmsi: Vec<MMSIType>,
+    pub time_begin: Vec<TimeType>,
+    pub time_end: Vec<TimeType>,
     pub nav_status: Vec<NavStatusValue>,
 }
 

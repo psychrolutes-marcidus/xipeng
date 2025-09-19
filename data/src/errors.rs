@@ -25,8 +25,8 @@ pub enum DataError {
 pub enum DatabaseError {
     #[error("Database connection error")]
     Connect(PgError),
-    #[error("Database query error")]
-    QueryError(PgError),
+    #[error("Database query error: {msg}, {db_error}")]
+    QueryError { db_error: PgError, msg: String },
     #[error("Invalid Port")]
     PortParse(#[from] ParseIntError),
     #[error("Invalid IP Address")]
