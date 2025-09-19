@@ -56,7 +56,6 @@ fn main() {
         std::fs::write(p, collected.as_str()).unwrap();
         println!("output experiment results to {0}",p);
 
-    println!("Hello, world!");
 }
 
 const fn time_dist(first: PointM, second: PointM, thres: f64) -> bool {
