@@ -3,10 +3,10 @@ use crate::types::multilinestringm::MultiLineStringM;
 use crate::types::pointm::PointM;
 
 /// Splits a linestring into (potentially) several sub-segments using a splitting function.
-/// 
+///
 /// `ls`: The input linestring
 /// `func`: A function that compares to subsequent points, The original linestring will be split if the function returns `false`
-pub fn segment_linestring<const CRS: u64, F>(ls: LineStringM<CRS>, func: F) ->  MultiLineStringM<CRS>
+pub fn segment_linestring<const CRS: u64, F>(ls: LineStringM<CRS>, func: F) -> MultiLineStringM<CRS>
 where
     F: Fn(PointM<CRS>, PointM<CRS>) -> bool,
 {
@@ -20,21 +20,23 @@ where
     for (idx, ele) in ls.clone().windows(2).enumerate() {
         if !func(ele[0].into(), ele[1].into()) {
             let rest = ls.split_off(idx + 1 - offset);
-            offset = idx;
+            offset = idx + 1;
             output.push(LineStringM(ls));
-            debug_assert_ne!(
-                output.last().map(|l| l.0.len()),
-                Some(1),
-                "Linestrings cannot have length 1 {0:?}",
-                output.last()
-            );
+            // debug_assert_ne!(
+            //     output.last().map(|l| l.0.len()),
+            //     Some(1),
+            //     "Linestrings cannot have length 1 {0:?}",
+            //     output.last()
+            // );
             ls = rest;
 
             #[cfg(debug_assertions)]
-            debug_assert_eq!(
-                output.iter().map(|l| l.0.len()).sum::<usize>() + ls.len(),
-                clone.len()
-            );
+            {
+                pretty_assertions::assert_eq!(
+                    output.iter().map(|l| l.0.len()).sum::<usize>() + ls.len(),
+                    clone.len(),
+                );
+            }
         }
     }
     if !ls.is_empty() {
@@ -42,16 +44,21 @@ where
     }
 
     // tests for presence of any illegal linestrings
-    let (legal, illegal): (Vec<_>, Vec<_>) =
-        output.into_iter().enumerate().partition(|p| p.1.0.len() != 1);
-
+    let (legal, illegal): (Vec<_>, Vec<_>) = output
+        .into_iter()
+        .enumerate()
+        .partition(|p| p.1.0.len() != 1); //TODO no length ==0
 
     // merges illegal linestrings with their left neighboring linestring
     let mut output: Vec<LineStringM<CRS>> = vec![];
-    for (idx,ele) in legal.into_iter() {
-        match illegal.iter().find(|p| idx+1==p.0 ) {
-            Some((_,ls)) => {output.push(LineStringM([ele.0,ls.0.clone()].concat())); },
-            None => {output.push(ele);},
+    for (idx, ele) in legal.into_iter() {
+        match illegal.iter().find(|p| idx + 1 == p.0) {
+            Some((_, ls)) => {
+                output.push(LineStringM([ele.0, ls.0.clone()].concat()));
+            }
+            None => {
+                output.push(ele);
+            }
         }
     }
 
@@ -62,7 +69,14 @@ where
             .map(|l| l.clone().0)
             .collect::<Vec<_>>()
             .concat();
-        debug_assert_eq!(clone, conc);
+        pretty_assertions::assert_eq!(
+            clone,
+            conc,
+            "Linestring segments erroneously discarded points (original length = {0}, new = {1} subsegments = {2})",
+            clone.len(),
+            conc.len(),
+            output.len(),
+        );
     }
 
     output.into()
@@ -166,6 +180,6 @@ mod tests {
         // fs::write("multilinestring.txt", hexstring.to_ascii_uppercase()).unwrap();
 
         // not sure what to test for :))
-        assert_eq!(segments.0.len(),23);
+        assert_eq!(segments.0.len(), 23);
     }
 }

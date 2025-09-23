@@ -10,8 +10,8 @@ geo-types = "0.7.17"
 geographiclib-rs = "0.2.5"
 thiserror = "2.0.16"
 wkb = "0.9.0"
+pretty_assertions = "1.4.1"
 
 [dev-dependencies]
 bytemuck = "1.23.2"
 hex = "0.4.3"
-pretty_assertions = "1.4.1"
