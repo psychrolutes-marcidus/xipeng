@@ -1,6 +1,55 @@
+use crate::types::coordm::CoordM;
 use crate::types::linestringm::LineStringM;
 use crate::types::multilinestringm::MultiLineStringM;
 use crate::types::pointm::PointM;
+
+pub enum TrajectorySplit<const CRS: u64> {
+    /// A split that resulted in a [`LineStringM`]
+    SubTrajectory(LineStringM<CRS>),
+    /// a split that resulted in a single [`PointM`]
+    Point(PointM<CRS>),
+}
+
+type Split<const CRS: u64> = Vec<TrajectorySplit<CRS>>;
+
+pub fn segmenter<const CRS: u64, F>(ls: LineStringM<CRS>, func: F) -> Split<CRS>
+where
+    F: Fn(PointM<CRS>, PointM<CRS>) -> bool,
+{
+    let mut ls = ls.0;
+    // let mut offset = 0 as usize;
+    let mut output: Vec<Vec<CoordM<CRS>>> = vec![vec![
+        *ls.first().expect("input trajectory should be nonempty"),
+    ]];
+
+    for (idx, ele) in ls.windows(2).enumerate() {
+        // let mut current: Vec<PointM<CRS>> = vec![];
+        let len = output.len();
+        match func(ele[0].into(), ele[1].into()) {
+            true => output
+                .get_mut(len - 1)
+                .unwrap()
+                .push(*ele.last().expect("should have exactly 2 elements")),
+            false => {
+                output.push(vec![*ele.last().unwrap()]);
+            }
+        }
+
+        output.into_iter().map(|v| match v {
+            vec if vec.len() == 1 => TrajectorySplit::Point(
+                vec.first()
+                    .expect("vector should contain exactly 1 point")
+                    .into(),
+            ),
+            otherwise => TrajectorySplit::SubTrajectory(
+                LineStringM::new(otherwise)
+                    .expect("sublinestring should be valid since original linestring was valid"),
+            ),
+        });
+    } //TODO: remember to push last element
+
+    todo!()
+}
 
 /// Splits a linestring into (potentially) several sub-segments using a splitting function.
 ///
@@ -46,7 +95,7 @@ where
     // tests for presence of any illegal linestrings
     let (legal, illegal): (Vec<_>, Vec<_>) = output
         .into_iter()
-        .filter(|p| p.0.len()!=0)
+        .filter(|p| p.0.len() != 0)
         .enumerate()
         .partition(|p| p.1.0.len() != 1); //TODO no length ==0
 
