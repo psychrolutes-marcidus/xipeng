@@ -46,6 +46,7 @@ where
     // tests for presence of any illegal linestrings
     let (legal, illegal): (Vec<_>, Vec<_>) = output
         .into_iter()
+        .filter(|p| p.0.len()!=0)
         .enumerate()
         .partition(|p| p.1.0.len() != 1); //TODO no length ==0
 
