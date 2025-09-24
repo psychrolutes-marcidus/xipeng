@@ -30,14 +30,24 @@ fn main() {
         .into_iter()
         .zip(linestrings.trajectory)
         .filter(|p| p.0.to_string().len() == 9)
-        .map(|(mmsi,ls)| (mmsi,LineStringM::<4326>(ls.0[0..10].to_vec()))) //TODO: remove
+        .map(|(mmsi, ls)| {
+            (
+                mmsi,
+                LineStringM::<4326>(ls.0.into_iter().take(10).collect()),
+            )
+        }) //TODO: remove
         .take(10)
         .collect();
-    //TODO get trajectories, sorted by length and/or number of points
 
+    let _ = linestrings
+        .iter()
+        .inspect(|f| {
+            assert!(f.1.0.is_sorted_by_key(|k| k.m), "mmsi ={}", f.0);
+        })
+        .collect::<Vec<_>>();
     dbg!(linestrings.first().unwrap().0);
     // panic!();
-    const THRESHOLDS: [f64; 6] = [5., 10., 15., 30., 60., 120.];
+    const THRESHOLDS: [f64; 4] = [15., 30., 60., 120.];
     let collected = linestrings
         .par_iter()
         .map(|(mmsi, ls)| {
