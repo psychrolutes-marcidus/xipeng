@@ -2,7 +2,7 @@ use chrono::DateTime;
 use data::{loaders::database::DbConn, tables::Ships, tables::trajectories::Trajectories};
 use dotenvy::*;
 use geo_traits::*;
-use linesonmaps::algo::segmenter::segment_linestring;
+use linesonmaps::algo::segmenter::{TrajectorySplit, segment_linestring, segmenter};
 use linesonmaps::types::linestringm::LineStringM;
 use linesonmaps::types::pointm::PointM;
 use linesonmaps::types::*;
@@ -30,12 +30,7 @@ fn main() {
         .into_iter()
         .zip(linestrings.trajectory)
         .filter(|p| p.0.to_string().len() == 9)
-        .map(|(mmsi, ls)| {
-            (
-                mmsi,
-                LineStringM::<4326>(ls.0.into_iter().take(10).collect()),
-            )
-        }) //TODO: remove
+        .map(|(mmsi, ls)| (mmsi, LineStringM::<4326>(ls.0.into_iter().collect()))) //TODO: remove
         .take(10)
         .collect();
 
@@ -47,45 +42,32 @@ fn main() {
         .collect::<Vec<_>>();
     dbg!(linestrings.first().unwrap().0);
     // panic!();
-    const THRESHOLDS: [f64; 4] = [15., 30., 60., 120.];
+    const THRESHOLDS: [f64; 7] = [15., 30., 60.,75.,90.,105., 120.];
     let collected = linestrings
         .par_iter()
         .map(|(mmsi, ls)| {
-            let c = THRESHOLDS.map(|t| segment_linestring(ls.clone(), |f, s| time_dist(f, s, t)));
+            let c = THRESHOLDS.map(|t| segmenter(ls.clone(), |f, s| time_dist(f, s, t)));
             (mmsi, c)
         })
-        // .inspect(|measures| {
-        //     println!(
-        //         "segments created = {0:?}\t average length = {1:?}",
-        //         measures
-        //             .iter()
-        //             .map(|mls| mls.num_line_strings())
-        //             .collect::<Vec<_>>(),
-        //         measures
-        //             .iter()
-        //             .map(|mls| mls
-        //                 .line_strings()
-        //                 .map(|ls| ls.0.len())
-        //                 .fold(0, |acc, x| acc + x)
-        //                 / mls.num_line_strings())
-        //             .collect::<Vec<_>>()
-        //     )
-        // })
         .map(|(mmsi, meas)| {
             format!(
-                "MMSI={2}\t segments created = {0:?}\t average length = {1:?}\n",
+                "MMSI={2}\t time intervals = {3:?} segments created = {0:?}\t average length = {1:?}\t total length = {4}\n",
                 meas.iter()
-                    .map(|mls| mls.num_line_strings())
+                    .map(|split| split.len())
                     .collect::<Vec<_>>(),
                 meas.iter()
-                    .map(|mls| mls
-                        .line_strings()
-                        .map(|ls| ls.0.len())
+                    .map(|split| split
+                        .iter()
+                        // .map(|ls| ls.0.len())
+                        .map(|s|{match s {
+                            TrajectorySplit::Point(p) => {1},
+                            TrajectorySplit::SubTrajectory(sls) => {sls.0.len()}
+                        }})
                         .fold(0, |acc, x| acc + x)
-                        / mls.num_line_strings())
+                        / split.len())
                     .collect::<Vec<_>>(),
                 mmsi
-            )
+            ,THRESHOLDS, TrajectorySplit::concat_to_linestring(meas[0].clone()).unwrap().0.len())
         })
         .collect::<Vec<_>>()
         .concat();
