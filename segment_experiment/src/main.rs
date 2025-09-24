@@ -42,36 +42,57 @@ fn main() {
         .collect::<Vec<_>>();
     dbg!(linestrings.first().unwrap().0);
     // panic!();
-    const THRESHOLDS: [f64; 7] = [15., 30., 60.,75.,90.,105., 120.];
+    const THRESHOLDS: [f64; 7] = [15., 30., 60., 75., 90., 105., 120.];
+    let header = "mmsi, total_len, time_threshold, num_splits, avg_subtraj_len\n";
     let collected = linestrings
         .par_iter()
         .map(|(mmsi, ls)| {
             let c = THRESHOLDS.map(|t| segmenter(ls.clone(), |f, s| time_dist(f, s, t)));
             (mmsi, c)
         })
-        .map(|(mmsi, meas)| {
-            format!(
-                "MMSI={2}\t time intervals = {3:?} segments created = {0:?}\t average length = {1:?}\t total length = {4}\n",
-                meas.iter()
-                    .map(|split| split.len())
-                    .collect::<Vec<_>>(),
-                meas.iter()
-                    .map(|split| split
-                        .iter()
-                        // .map(|ls| ls.0.len())
-                        .map(|s|{match s {
-                            TrajectorySplit::Point(p) => {1},
-                            TrajectorySplit::SubTrajectory(sls) => {sls.0.len()}
-                        }})
-                        .fold(0, |acc, x| acc + x)
-                        / split.len())
-                    .collect::<Vec<_>>(),
-                mmsi
-            ,THRESHOLDS, TrajectorySplit::concat_to_linestring(meas[0].clone()).unwrap().0.len())
-        })
-        .collect::<Vec<_>>()
-        .concat();
-    let p = "segment_experiment_results.txt";
+        .map(|(mmsi, measures)| {
+            let total_len = TrajectorySplit::concat_to_linestring(measures[0].clone())
+                .unwrap()
+                .0
+                .len();
+            let rows = measures.into_iter().enumerate().map(|(idx, m)| {
+                format!(
+                    "{mmsi},{total_len},{0},{1},{2}\n",
+                    THRESHOLDS[idx],
+                    m.len(),
+                    TrajectorySplit::concat_to_linestring(m.clone())
+                        .unwrap()
+                        .0
+                        .len()
+                        / m.len()
+                )
+            }).collect::<Vec<_>>().concat();
+            rows
+        }).collect::<Vec<_>>().concat();
+        // .map(|(mmsi, meas)| {
+        //     format!(
+        //         "MMSI={2}\t time intervals = {3:?} segments created = {0:?}\t average length = {1:?}\t total length = {4}\n",
+        //         meas.iter()
+        //             .map(|split| split.len())
+        //             .collect::<Vec<_>>(),
+        //         meas.iter()
+        //             .map(|split| split
+        //                 .iter()
+        //                 // .map(|ls| ls.0.len())
+        //                 .map(|s|{match s {
+        //                     TrajectorySplit::Point(p) => {1},
+        //                     TrajectorySplit::SubTrajectory(sls) => {sls.0.len()}
+        //                 }})
+        //                 .fold(0, |acc, x| acc + x)
+        //                 / split.len())
+        //             .collect::<Vec<_>>(),
+        //         mmsi
+        //     ,THRESHOLDS, TrajectorySplit::concat_to_linestring(meas[0].clone()).unwrap().0.len())
+        // })
+        // .collect::<Vec<_>>();
+    // .concat();
+    let p = "segment_experiment_results.csv";
+    let collected = format!("{header}{collected}");
     std::fs::write(p, collected.as_str()).unwrap();
     println!("output experiment results to {0}", p);
 }
