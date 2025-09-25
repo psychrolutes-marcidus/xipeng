@@ -43,13 +43,11 @@ where
     let clone = ls.clone();
 
     let ls = ls.0;
-    // let mut offset = 0 as usize;
     let mut output: Vec<Vec<CoordM<CRS>>> = vec![vec![
         *ls.first().expect("input trajectory should be nonempty"),
     ]];
 
-    for (idx, ele) in ls.windows(2).enumerate() {
-        // let mut current: Vec<PointM<CRS>> = vec![];
+    for ele in ls.windows(2) {
         let len = output.len();
         match func(ele[0].into(), ele[1].into()) {
             true => output
