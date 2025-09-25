@@ -392,11 +392,6 @@ impl<const CHUNK_SIZE: u32> Iterator for TrajectoryIter<CHUNK_SIZE> {
     type Item = Result<Trajectories, DatabaseError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        // let mut trajs = Trajectories::new();
-        // trajs.mmsi.reserve_exact(CHUNK_SIZE as usize);
-        // trajs.trajectory.reserve_exact(CHUNK_SIZE as usize);
-
-        // dbg!(self.offset);
         const SQL: &str = "
         SELECT MMSI, st_asbinary(TRAJ,'NDR') as traj FROM
             PROGRAM_DATA.TRAJECTORIES 
@@ -412,7 +407,6 @@ impl<const CHUNK_SIZE: u32> Iterator for TrajectoryIter<CHUNK_SIZE> {
                 db_error: e,
                 msg: "trajectories query".into(),
             });
-            // dbg!(&result);
         let result = result
             .map(|v| {
                 v.into_iter()
@@ -476,7 +470,7 @@ mod tests {
             )
             .unwrap().first().unwrap()
             .get::<'_, _, i64>("count") as u32;
-        let mut it = TrajectoryIter::<SIZE>::new(conn);
+        let it = TrajectoryIter::<SIZE>::new(conn);
         
         assert_eq!(count.div_ceil(SIZE),it.count() as u32);
 
