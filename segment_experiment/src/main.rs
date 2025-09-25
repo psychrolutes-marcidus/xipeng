@@ -49,7 +49,7 @@ fn main() {
     let collected = linestrings
         .par_iter()
         .map(|(mmsi, ls)| {
-            let c = thresholds.iter().map(|t| segmenter(ls.clone(), |f, s| time_dist(f, s, *t))).collect::<Vec<_>>();
+            let c = thresholds.iter().map(|t| segmenter(ls.clone(), |f, s| dist(f, s, *t))).collect::<Vec<_>>();
             (mmsi, c)
         })
         .map(|(mmsi, measures)| {
