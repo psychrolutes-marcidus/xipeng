@@ -1,5 +1,7 @@
 use crate::errors::DatabaseError;
+use crate::tables::trajectories::Trajectories;
 use crate::tables::*;
+use itertools::Itertools;
 use linesonmaps::types::linestringm::LineStringM;
 use postgres::{Client, Config, NoTls};
 use std::collections::HashSet;
@@ -374,6 +376,65 @@ WHERE mmsi = ANY($1)",
     }
 
     Ok(gps_position_table)
+}
+
+pub struct TrajectoryIter<const CHUNK_SIZE: u32> {
+    conn: DbConn,
+    offset: u32,
+}
+
+impl<const CHUNK_SIZE: u32> Iterator for TrajectoryIter<CHUNK_SIZE> {
+    type Item = Result<Trajectories, DatabaseError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut trajs = Trajectories::new();
+        trajs.mmsi.reserve_exact(CHUNK_SIZE as usize);
+        trajs.trajectory.reserve_exact(CHUNK_SIZE as usize);
+
+        const SQL: &str = "
+        SELECT MMSI, TRAJ FROM
+            FROM PROGRAM_DATA.TRAJECTORIES 
+                ORDER BY MMSI
+                LIMIT $1 
+                OFFSET $2;";
+
+        let result = self
+            .conn
+            .conn
+            .query(SQL, &[&(CHUNK_SIZE as i32), &(self.offset as i32)])
+            .map_err(|e| DatabaseError::QueryError {
+                db_error: e,
+                msg: "trajectories query".into(),
+            });
+
+        let result = result
+            .map(|v| {
+                v.into_iter()
+                    .map(|r| {
+                        Ok::<(i32, LineStringM<4326>), DatabaseError>((
+                            r.get::<'_, _, i32>("mmsi"),
+                            LineStringM::try_from(read_wkb(
+                                r.get::<'_, _, Vec<u8>>("traj").as_slice(),
+                            )?)?,
+                        ))
+                    })
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .flatten()
+            .map(|v| {
+                let uz = v.into_iter().unzip::<i32, LineStringM, Vec<_>, Vec<_>>();
+                if uz.0.len() > 0 {
+                    Some(Trajectories {
+                        mmsi: uz.0,
+                        trajectory: uz.1,
+                    })
+                } else {
+                    None
+                }
+            })
+            .transpose();
+        result
+    }
 }
 
 #[cfg(test)]
