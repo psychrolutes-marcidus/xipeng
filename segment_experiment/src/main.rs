@@ -41,9 +41,6 @@ fn main() {
             assert!(f.1.0.is_sorted_by_key(|k| k.m), "mmsi ={}", f.0);
         })
         .collect::<Vec<_>>();
-    // dbg!(linestrings.first().unwrap().0);
-    // panic!();
-    const THRESHOLDS: [f64; 7] = [15., 30., 60., 75., 90., 105., 120.];
     // let thresholds = (1..).map(|e| (e*10) as f64).take_while(|n|*n<300.).collect::<Vec<_>>(); //time
     let thresholds = (2..)
         .map(|e: i32| e.pow(2) as f64)

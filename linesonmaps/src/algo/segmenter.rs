@@ -56,7 +56,7 @@ where
             false => {
                 output.push(vec![*ele.last().unwrap()]);
             }
-        } //TODO: remember to push last element
+        }
     }
 
     // partition based on sub-trajectory length (length ==1 are not "proper" trajectories)
@@ -68,7 +68,7 @@ where
                     .expect("vector should contain exactly 1 point")
                     .into(),
             ),
-            otherwise => TrajectorySplit::SubTrajectory(LineStringM::new(otherwise).expect("hejj")),
+            otherwise => TrajectorySplit::SubTrajectory(LineStringM::new(otherwise).expect("valid input trajectory implies valid subtrajectory")),
         })
         .collect::<Vec<_>>();
 
