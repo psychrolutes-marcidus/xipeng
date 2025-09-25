@@ -43,7 +43,7 @@ fn main() {
         .collect::<Vec<_>>();
     // let thresholds = (1..).map(|e| (e*10) as f64).take_while(|n|*n<300.).collect::<Vec<_>>(); //time
     let thresholds = (2..)
-        .map(|e: i32| e.pow(2) as f64)
+        .map(|e: i32| 2_i32.pow(e as u32) as f64)
         .take_while(|n| *n <= 2500.)
         .collect::<Vec<_>>(); //dist
 
