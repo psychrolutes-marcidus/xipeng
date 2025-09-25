@@ -1,6 +1,5 @@
 use crate::types::coordm::CoordM;
 use crate::types::linestringm::LineStringM;
-use crate::types::multilinestringm::MultiLineStringM;
 use crate::types::pointm::PointM;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -59,6 +58,8 @@ where
             }
         } //TODO: remember to push last element
     }
+
+    // partition based on sub-trajectory length (length ==1 are not "proper" trajectories)
     let splits = output
         .into_iter()
         .map(|v| match v {
@@ -80,6 +81,7 @@ where
 
     #[cfg(debug_assertions)]
     {
+        //no points should be removed, and order should be maintained
         let ls = TrajectorySplit::concat_to_linestring(splits.clone()).unwrap();
         debug_assert_eq!(
             ls, clone,
@@ -92,17 +94,11 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::cmp::Ordering;
-    use std::fs;
-
     use super::*;
     use crate::types::coordm::CoordM;
-    use crate::types::multilinestringm::MultiLineStringM;
     use geo::Distance;
-    use hex::encode;
     use pretty_assertions::{assert_eq, assert_ne};
     use wkb::reader::read_wkb;
-    use wkb::writer::WriteOptions;
 
     #[test]
     fn no_segment_segmenter() {
