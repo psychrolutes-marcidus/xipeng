@@ -86,7 +86,7 @@ fn fetch_nav_status(
     nav_status_table.time_end.reserve(size);
     nav_status_table.nav_status.reserve(size);
 
-    for row in result {
+    for row in &result {
         let mmsi: i32 = row.get("mmsi");
         let time_begin: DateTime<Utc> = row.get("time_begin");
         let time_end: DateTime<Utc> = row.get("time_end");
@@ -98,6 +98,8 @@ fn fetch_nav_status(
         nav_status_table.time_end.push(time_end);
         nav_status_table.nav_status.push(status_parsed);
     }
+
+    std::thread::spawn(move || drop(result));
 
     Ok(nav_status_table)
 }
@@ -130,7 +132,7 @@ fn fetch_draught(
     draught_table.time_end.reserve(size);
     draught_table.draught.reserve(size);
 
-    for row in result {
+    for row in &result {
         let mmsi: i32 = row.get("mmsi");
         let time_begin: DateTime<Utc> = row.get("time_begin");
         let time_end: DateTime<Utc> = row.get("time_end");
@@ -141,6 +143,8 @@ fn fetch_draught(
         draught_table.time_end.push(time_end);
         draught_table.draught.push(draught);
     }
+
+    std::thread::spawn(move || drop(result));
 
     Ok(draught_table)
 }
@@ -170,7 +174,7 @@ fn fetch_cog(
     cog_table.time.reserve(size);
     cog_table.cog.reserve(size);
 
-    for row in result {
+    for row in &result {
         let mmsi: i32 = row.get("mmsi");
         let time: DateTime<Utc> = row.get("timestamp");
         let cog: f32 = row.get("cog");
@@ -178,6 +182,8 @@ fn fetch_cog(
         cog_table.time.push(time);
         cog_table.cog.push(cog);
     }
+
+    std::thread::spawn(move || drop(result));
 
     Ok(cog_table)
 }
@@ -207,7 +213,7 @@ fn fetch_sog(
     sog_table.time.reserve(size);
     sog_table.sog.reserve(size);
 
-    for row in result {
+    for row in &result {
         let mmsi: i32 = row.get("mmsi");
         let time: DateTime<Utc> = row.get("timestamp");
         let sog: f32 = row.get("sog");
@@ -215,6 +221,8 @@ fn fetch_sog(
         sog_table.time.push(time);
         sog_table.sog.push(sog);
     }
+
+    std::thread::spawn(move || drop(result));
     Ok(sog_table)
 }
 
@@ -243,7 +251,7 @@ fn fetch_rot(
     rot_table.time.reserve(size);
     rot_table.rot.reserve(size);
 
-    for row in result {
+    for row in &result {
         let mmsi: i32 = row.get("mmsi");
         let time: DateTime<Utc> = row.get("timestamp");
         let rot: f32 = row.get("rot");
@@ -251,6 +259,8 @@ fn fetch_rot(
         rot_table.time.push(time);
         rot_table.rot.push(rot);
     }
+
+    std::thread::spawn(move || drop(result));
 
     Ok(rot_table)
 }
@@ -282,7 +292,7 @@ WHERE ST_IsEmpty(ST_FilterByM(traj, $1, $2)) = false;",
     trajectories_table.mmsi.reserve(size);
     trajectories_table.trajectory.reserve(size);
 
-    for row in result {
+    for row in &result {
         let mmsi: i32 = row.get("mmsi");
         let traj: Vec<u8> = row.get("traj");
 
@@ -292,6 +302,8 @@ WHERE ST_IsEmpty(ST_FilterByM(traj, $1, $2)) = false;",
         trajectories_table.mmsi.push(mmsi);
         trajectories_table.trajectory.push(lsm);
     }
+
+    std::thread::spawn(move || drop(result));
 
     Ok(trajectories_table)
 }
@@ -320,7 +332,7 @@ WHERE mmsi = ANY($1)",
     dimensions_table.width.reserve(size);
     dimensions_table.length.reserve(size);
 
-    for row in result {
+    for row in &result {
         let mmsi: i32 = row.get("mmsi");
         let width: f64 = row.get("width");
         let length: f64 = row.get("length");
@@ -329,6 +341,8 @@ WHERE mmsi = ANY($1)",
         dimensions_table.width.push(width);
         dimensions_table.length.push(length);
     }
+
+    std::thread::spawn(move || drop(result));
 
     Ok(dimensions_table)
 }
@@ -359,7 +373,7 @@ WHERE mmsi = ANY($1)",
     gps_position_table.c.reserve(size);
     gps_position_table.d.reserve(size);
 
-    for row in result {
+    for row in &result {
         let mmsi: i32 = row.get("mmsi");
         let a: f64 = row.get("a");
         let b: f64 = row.get("b");
@@ -372,6 +386,8 @@ WHERE mmsi = ANY($1)",
         gps_position_table.c.push(c);
         gps_position_table.d.push(d);
     }
+
+    std::thread::spawn(move || drop(result));
 
     Ok(gps_position_table)
 }
