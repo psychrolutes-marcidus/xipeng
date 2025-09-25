@@ -145,7 +145,7 @@ fn fetch_draught(
     }
 
     std::thread::spawn(move || drop(result));
-
+  
     Ok(draught_table)
 }
 
@@ -159,7 +159,7 @@ fn fetch_cog(
     let result = conn
         .query(
             "SELECT mmsi, timestamp, cog
-            FROM	PROGRAM_DATA.COG
+            FROM PROGRAM_DATA.COG
             WHERE timestamp >= $1 AND timestamp <= $2",
             &[&time_begin, &time_end],
         )
@@ -223,6 +223,7 @@ fn fetch_sog(
     }
 
     std::thread::spawn(move || drop(result));
+  
     Ok(sog_table)
 }
 
