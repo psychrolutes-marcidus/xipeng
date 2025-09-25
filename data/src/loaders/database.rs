@@ -383,17 +383,23 @@ pub struct TrajectoryIter<const CHUNK_SIZE: u32> {
     offset: u32,
 }
 
+impl<const CHUNK_SIZE: u32> TrajectoryIter<CHUNK_SIZE> {
+    pub fn new(conn: DbConn) -> Self {
+        TrajectoryIter { conn, offset: 0 }
+    }
+}
 impl<const CHUNK_SIZE: u32> Iterator for TrajectoryIter<CHUNK_SIZE> {
     type Item = Result<Trajectories, DatabaseError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let mut trajs = Trajectories::new();
-        trajs.mmsi.reserve_exact(CHUNK_SIZE as usize);
-        trajs.trajectory.reserve_exact(CHUNK_SIZE as usize);
+        // let mut trajs = Trajectories::new();
+        // trajs.mmsi.reserve_exact(CHUNK_SIZE as usize);
+        // trajs.trajectory.reserve_exact(CHUNK_SIZE as usize);
 
+        // dbg!(self.offset);
         const SQL: &str = "
-        SELECT MMSI, TRAJ FROM
-            FROM PROGRAM_DATA.TRAJECTORIES 
+        SELECT MMSI, st_asbinary(TRAJ,'NDR') as traj FROM
+            PROGRAM_DATA.TRAJECTORIES 
                 ORDER BY MMSI
                 LIMIT $1 
                 OFFSET $2;";
@@ -401,12 +407,12 @@ impl<const CHUNK_SIZE: u32> Iterator for TrajectoryIter<CHUNK_SIZE> {
         let result = self
             .conn
             .conn
-            .query(SQL, &[&(CHUNK_SIZE as i32), &(self.offset as i32)])
+            .query(SQL, &[&(CHUNK_SIZE as i64), &(self.offset as i64)])
             .map_err(|e| DatabaseError::QueryError {
                 db_error: e,
                 msg: "trajectories query".into(),
             });
-
+            // dbg!(&result);
         let result = result
             .map(|v| {
                 v.into_iter()
@@ -423,7 +429,7 @@ impl<const CHUNK_SIZE: u32> Iterator for TrajectoryIter<CHUNK_SIZE> {
             .flatten()
             .map(|v| {
                 let uz = v.into_iter().unzip::<i32, LineStringM, Vec<_>, Vec<_>>();
-                if uz.0.len() > 0 {
+                if dbg!(uz.0.len()) > 0 {
                     Some(Trajectories {
                         mmsi: uz.0,
                         trajectory: uz.1,
@@ -433,6 +439,7 @@ impl<const CHUNK_SIZE: u32> Iterator for TrajectoryIter<CHUNK_SIZE> {
                 }
             })
             .transpose();
+        self.offset = self.offset + CHUNK_SIZE;
         result
     }
 }
@@ -454,5 +461,25 @@ mod tests {
             .unwrap();
 
         db.fetch_data(from.into(), to.into()).unwrap();
+    }
+
+    #[test]
+    fn trajectory_iter_works() {
+        dotenvy::dotenv().unwrap();
+        let mut conn = DbConn::new().unwrap();
+        const SIZE: u32 = 500;
+        let count = conn
+            .conn
+            .query(
+                "select count(*) as count from program_data.trajectories",
+                &[],
+            )
+            .unwrap().first().unwrap()
+            .get::<'_, _, i64>("count") as u32;
+        let mut it = TrajectoryIter::<SIZE>::new(conn);
+        
+        assert_eq!(count.div_ceil(SIZE),it.count() as u32);
+
+
     }
 }
