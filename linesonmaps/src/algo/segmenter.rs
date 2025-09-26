@@ -1,3 +1,5 @@
+use wkb::writer::{WriteOptions, write_line_string, write_point};
+
 use crate::types::coordm::CoordM;
 use crate::types::linestringm::LineStringM;
 use crate::types::pointm::PointM;
@@ -25,6 +27,33 @@ impl<const CRS: u64> TrajectorySplit<CRS> {
             .concat();
 
         LineStringM::new(concat)
+    }
+
+    pub fn to_wkb(&self) -> Vec<u8> {
+        let mut writer = Vec::<u8>::new();
+        match self {
+            Self::SubTrajectory(ls) => {
+                let _ = write_line_string(
+                    &mut writer,
+                    ls,
+                    &WriteOptions {
+                        endianness: wkb::Endianness::LittleEndian,
+                    },
+                )
+                .expect("failed to write geometry");
+            }
+            Self::Point(p) => {
+                let _ = write_point(
+                    &mut writer,
+                    p,
+                    &WriteOptions {
+                        endianness: wkb::Endianness::LittleEndian,
+                    },
+                )
+                .expect("failed to write geometry");
+            }
+        };
+        writer
     }
 }
 
@@ -68,7 +97,10 @@ where
                     .expect("vector should contain exactly 1 point")
                     .into(),
             ),
-            otherwise => TrajectorySplit::SubTrajectory(LineStringM::new(otherwise).expect("valid input trajectory implies valid subtrajectory")),
+            otherwise => TrajectorySplit::SubTrajectory(
+                LineStringM::new(otherwise)
+                    .expect("valid input trajectory implies valid subtrajectory"),
+            ),
         })
         .collect::<Vec<_>>();
 
