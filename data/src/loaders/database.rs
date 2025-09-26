@@ -415,13 +415,6 @@ impl<const CHUNK_SIZE: u32> Iterator for TrajectoryIter<CHUNK_SIZE> {
 
     fn next(&mut self) -> Option<Self::Item> {
         //! Probably doesn't behave well if view changes in between calls
-        // const SQL: &str = "
-        // SELECT MMSI, st_asbinary(TRAJ,'NDR') as traj FROM
-        //     PROGRAM_DATA.TRAJECTORIES
-        //         ORDER BY MMSI
-        //         LIMIT $1
-        //         OFFSET $2;";
-
         let result = self
             .conn
             .conn
