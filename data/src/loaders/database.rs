@@ -3,7 +3,8 @@ use crate::tables::trajectories::Trajectories;
 use crate::tables::*;
 use itertools::Itertools;
 use linesonmaps::types::linestringm::LineStringM;
-use postgres::{Client, Config, NoTls};
+use postgres::types::Type;
+use postgres::{Client, Config, NoTls, Statement};
 use std::collections::HashSet;
 use wkb::reader::read_wkb;
 
@@ -381,11 +382,32 @@ WHERE mmsi = ANY($1)",
 pub struct TrajectoryIter<const CHUNK_SIZE: u32> {
     conn: DbConn,
     offset: u32,
+    statement: Statement,
 }
 
 impl<const CHUNK_SIZE: u32> TrajectoryIter<CHUNK_SIZE> {
-    pub fn new(conn: DbConn) -> Self {
-        TrajectoryIter { conn, offset: 0 }
+    pub fn new(conn: DbConn) -> Result<Self, DatabaseError> {
+        let mut conn = conn;
+        let statement = conn
+            .conn
+            .prepare_typed(
+                "
+                SELECT MMSI, st_asbinary(TRAJ,'NDR') as traj FROM
+                    PROGRAM_DATA.TRAJECTORIES 
+                        ORDER BY MMSI
+                        LIMIT $1 
+                        OFFSET $2;",
+                &[Type::INT8, Type::INT8],
+            )
+            .map_err(|e| DatabaseError::QueryError {
+                db_error: e,
+                msg: "error in preparing statement".into(),
+            })?;
+        Ok(TrajectoryIter {
+            conn,
+            offset: 0,
+            statement,
+        })
     }
 }
 impl<const CHUNK_SIZE: u32> Iterator for TrajectoryIter<CHUNK_SIZE> {
@@ -393,24 +415,27 @@ impl<const CHUNK_SIZE: u32> Iterator for TrajectoryIter<CHUNK_SIZE> {
 
     fn next(&mut self) -> Option<Self::Item> {
         //! Probably doesn't behave well if view changes in between calls
-        const SQL: &str = "
-        SELECT MMSI, st_asbinary(TRAJ,'NDR') as traj FROM
-            PROGRAM_DATA.TRAJECTORIES 
-                ORDER BY MMSI
-                LIMIT $1 
-                OFFSET $2;";
+        // const SQL: &str = "
+        // SELECT MMSI, st_asbinary(TRAJ,'NDR') as traj FROM
+        //     PROGRAM_DATA.TRAJECTORIES
+        //         ORDER BY MMSI
+        //         LIMIT $1
+        //         OFFSET $2;";
 
         let result = self
             .conn
             .conn
-            .query(SQL, &[&(CHUNK_SIZE as i64), &(self.offset as i64)])
+            .query(
+                &self.statement,
+                &[&(CHUNK_SIZE as i64), &(self.offset as i64)],
+            )
             .map_err(|e| DatabaseError::QueryError {
                 db_error: e,
                 msg: "trajectories query".into(),
             });
-        let result = result
+        let o_result = result
             .map(|v| {
-                v.into_iter()
+                let res = v.into_iter()
                     .map(|r| {
                         Ok::<(i32, LineStringM<4326>), DatabaseError>((
                             r.get::<'_, _, i32>("mmsi"),
@@ -419,7 +444,8 @@ impl<const CHUNK_SIZE: u32> Iterator for TrajectoryIter<CHUNK_SIZE> {
                             )?)?,
                         ))
                     })
-                    .collect::<Result<Vec<_>, _>>()
+                    .collect::<Result<Vec<_>, _>>();
+                res
             })
             .flatten()
             .map(|v| {
@@ -435,7 +461,7 @@ impl<const CHUNK_SIZE: u32> Iterator for TrajectoryIter<CHUNK_SIZE> {
             })
             .transpose();
         self.offset = self.offset + CHUNK_SIZE;
-        result
+        o_result
     }
 }
 
@@ -458,6 +484,8 @@ mod tests {
         db.fetch_data(from.into(), to.into()).unwrap();
     }
 
+
+    // takes a while to run (~100 seconds, less in release)
     #[test]
     fn trajectory_iter_works() {
         dotenvy::dotenv().unwrap();
@@ -469,12 +497,13 @@ mod tests {
                 "select count(*) as count from program_data.trajectories",
                 &[],
             )
-            .unwrap().first().unwrap()
+            .unwrap()
+            .first()
+            .unwrap()
             .get::<'_, _, i64>("count") as u32;
-        let it = TrajectoryIter::<SIZE>::new(conn);
-        
-        assert_eq!(count.div_ceil(SIZE),it.count() as u32);
+        let it = TrajectoryIter::<SIZE>::new(conn)
+            .expect("error in establishing connection or in preparing statement");
 
-
+        assert_eq!(count.div_ceil(SIZE), it.count() as u32);
     }
 }
