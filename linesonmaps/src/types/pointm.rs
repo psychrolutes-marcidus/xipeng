@@ -1,4 +1,6 @@
+use crate::types::coordm::CoordM;
 use geo::algorithm::Distance;
+use geo::algorithm::GeodesicMeasure;
 use geo::{Euclidean, HaversineMeasure};
 use geo_traits::CoordTrait;
 use geo_traits::{
@@ -6,13 +8,11 @@ use geo_traits::{
     UnimplementedLineString, UnimplementedMultiLineString, UnimplementedMultiPoint,
     UnimplementedMultiPolygon, UnimplementedPolygon, UnimplementedRect, UnimplementedTriangle,
 };
-use crate::types::coordm::CoordM;
-use geo::algorithm::GeodesicMeasure;
 use geo_types::{Coord, Point};
 use geographiclib_rs::Geodesic;
 
 ///largely similar to a [`CoordM`], but distinctions are made in libraries, so i am going to as well :)
-#[derive(Debug, Clone, Copy, PartialEq,Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Hash)]
 pub struct PointM<const CRS: u64 = 4326> {
     pub coord: CoordM<CRS>,
 }
@@ -192,5 +192,24 @@ mod tests {
         // the preferred way of measuring geodesic distance
         let alternative = Geodesic.distance(first, second);
         assert_eq!(dist, alternative);
+    }
+    #[test]
+    fn wkb_correct_type_byte() {
+        let p = PointM::<4326>::from((1., 2., 3.5));
+        let mut w = vec![];
+        let _ = wkb::writer::write_point(
+            &mut w,
+            &p,
+            &wkb::writer::WriteOptions {
+                endianness: wkb::Endianness::LittleEndian,
+            },
+        )
+        .unwrap();
+
+    let bytes = 2001_u32.to_le_bytes();
+    // dbg!(hex::encode(2001_u32.to_le_bytes().as_slice()));
+    // assert!(false);
+    assert_eq!(bytes.as_slice(),&w[1..=4]);
+    // assert_eq!(2001_u32,u32::from_le_bytes(w[1..=4]));
     }
 }

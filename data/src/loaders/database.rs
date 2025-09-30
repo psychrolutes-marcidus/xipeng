@@ -69,12 +69,12 @@ fn insert_split_traj<const CRS: u64>(
     conn: &mut Client,
     sub_trajs: Vec<(i32, TrajectorySplit<CRS>, f64, TimeDelta)>,
 ) -> Result<Transaction<'_>, DatabaseError> {
-    let temp_table = "temp table temp_split 
+    let temp_table = "create temp table temp_split 
     (
         mmsi integer, 
         dist_thres double precision, 
         time_thres_s double precision, 
-        bytev byta,
+        bytev bytea
     ) 
     on commit drop;";
 
@@ -87,7 +87,7 @@ fn insert_split_traj<const CRS: u64>(
         .execute(temp_table, &[])
         .map_err(|e| DatabaseError::QueryError {
             db_error: e,
-            msg: "could create temp table".into(),
+            msg: "could not create temp table".into(),
         })?;
 
     let mut writer =
@@ -118,8 +118,8 @@ fn insert_split_traj<const CRS: u64>(
         "copied #rows should be equal to input rows"
     );
 
-    let insert = "insert into trajectory_splits (mmsi, dist_thres, time_thres, sub_traj)
-        select mmsi, dist_thres, make_interval(secs=>time_thres_s) as time_thres from temp_split
+    let insert = "insert into program_data.trajectory_splits (mmsi, dist_thres, time_thres, sub_traj)
+        select mmsi, dist_thres, make_interval(secs=>time_thres_s) as time_thres, st_geomfromwkb(decode(bytev,'hex'),4326) as sub_traj from temp_split
             on conflict do nothing";
 
     let b = t
@@ -454,6 +454,8 @@ WHERE mmsi = ANY($1)",
 
 #[cfg(test)]
 mod tests {
+    use linesonmaps::types::pointm::PointM;
+
     use super::*;
 
     #[test]
@@ -469,5 +471,22 @@ mod tests {
             .unwrap();
 
         db.fetch_data(from.into(), to.into()).unwrap();
+    }
+
+    #[test]
+    fn split_traj_insertion_works() {
+        let mut db = DbConn::new().unwrap();
+
+        let ts = TrajectorySplit::<4326>::Point(PointM::from((1., 2., 3.5)));
+        dbg!(hex::encode(ts.clone().to_wkb()));
+        const INTERVAL: TimeDelta = TimeDelta::new(69, 0).unwrap();
+        const HEX: u32 = 0xd1070000;
+        const HEXX: u32 = 0x0000701d_u32;
+        const HEXXX_32: u32 = 0x01000040;
+        const A:u32 = 0x00_00_07_d1;
+        dbg!(hex::encode(2001_u32.to_le_bytes()));
+        let t = insert_split_traj(&mut db.conn, vec![(123456789, ts, 42.0, INTERVAL)])
+            .expect("transaction should not fail");
+        t.rollback().expect("error during rollback");
     }
 }
