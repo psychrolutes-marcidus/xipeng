@@ -1,0 +1,18 @@
+[package]
+name = "solomon"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+data ={ path = "../data"}
+linesonmaps = {path = "../linesonmaps"}
+rayon = "1.11.0"
+dotenvy = "0.15.7"
+chrono = "0.4.42"
+geo = "0.31.0"
+geographiclib-rs = "0.2.5"
+geo-traits = "0.3.0"
+
+
+[lints]
+workspace = true
