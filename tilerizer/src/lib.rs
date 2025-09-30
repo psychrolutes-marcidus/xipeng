@@ -62,23 +62,27 @@ impl std::ops::Sub for Point {
     }
 }
 
-pub fn draw_linestring(ls: LineStringM<3857>, zoom_level: i32, sampling_zoom_level: i32) -> Vec<Tile> {
-
-
+pub fn draw_linestring(
+    ls: LineStringM<3857>,
+    zoom_level: i32,
+    sampling_zoom_level: i32,
+) -> Vec<Tile> {
     // ls.lines().map(|x| )
 
     todo!()
 }
 
-
 pub fn point_to_grid(point: CoordM<4326>, sampling_zoom_level: i32) -> Point {
     use std::f64::consts::*;
 
-    let x = (1./TAU*2_f64.powi(sampling_zoom_level)*(PI + (point.x * PI / 180.))).floor() as i32;
-    let y = (1./TAU*2_f64.powi(sampling_zoom_level)*(PI - ((FRAC_PI_4+(point.y * PI/180.)/2.).tan()).ln())).floor() as i32;
+    let x =
+        (1. / TAU * 2_f64.powi(sampling_zoom_level) * (PI + (point.x * PI / 180.))).floor() as i32;
+    let y = (1. / TAU
+        * 2_f64.powi(sampling_zoom_level)
+        * (PI - ((FRAC_PI_4 + (point.y * PI / 180.) / 2.).tan()).ln()))
+    .floor() as i32;
 
     Point { x, y }
-
 }
 
 pub fn points_to_tiles(
@@ -172,7 +176,6 @@ pub fn point_time_duration(
 
     return duration;
 }
-
 
 pub fn draw_line(from: Point, to: Point) -> Vec<Point> {
     let mut coordinates: Vec<Point> = vec![];
@@ -386,8 +389,12 @@ mod tests {
 
     #[test]
     fn coord_to_point() {
-        let cass_point = Point {x: 34586, y: 20073}; // At zoom 16
-        let cass_4326_coord = CoordM::<4326> {x: 9.99083572, y: 57.01233944, m: 69.0};
+        let cass_point = Point { x: 34586, y: 20073 }; // At zoom 16
+        let cass_4326_coord = CoordM::<4326> {
+            x: 9.99083572,
+            y: 57.01233944,
+            m: 69.0,
+        };
 
         let result = point_to_grid(cass_4326_coord, 16);
 
