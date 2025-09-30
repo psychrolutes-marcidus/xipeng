@@ -1,5 +1,5 @@
 use chrono::prelude::*;
-use data::tables::ship_draught::Draught;
+use data::tables::Ships;
 use itertools::Itertools;
 use linesonmaps::types::{coordm::CoordM, linestringm::LineStringM};
 use std::cmp;
@@ -7,10 +7,10 @@ use std::cmp;
 const KNOT_TO_MPS: f64 = 0.514444;
 const SEC_TO_MILLISEC: f64 = 1000.0;
 
-const SINGLE_VESSEL: u64 = 0;
-const MULTI_VESSEL: u64 = 1;
+pub const SINGLE_VESSEL: u64 = 0;
+pub const MULTI_VESSEL: u64 = 1;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Point {
     pub x: i32,
     pub y: i32,
@@ -60,6 +60,25 @@ impl std::ops::Sub for Point {
             y: self.y - rhs.y,
         }
     }
+}
+
+pub fn draw_linestring(ls: LineStringM<3857>, zoom_level: i32, sampling_zoom_level: i32) -> Vec<Tile> {
+
+
+    // ls.lines().map(|x| )
+
+    todo!()
+}
+
+
+pub fn point_to_grid(point: CoordM<4326>, sampling_zoom_level: i32) -> Point {
+    use std::f64::consts::*;
+
+    let x = (1./TAU*2_f64.powi(sampling_zoom_level)*(PI + (point.x * PI / 180.))).floor() as i32;
+    let y = (1./TAU*2_f64.powi(sampling_zoom_level)*(PI - ((FRAC_PI_4+(point.y * PI/180.)/2.).tan()).ln())).floor() as i32;
+
+    Point { x, y }
+
 }
 
 pub fn points_to_tiles(
@@ -154,22 +173,6 @@ pub fn point_time_duration(
     return duration;
 }
 
-// pub fn combine_tile_single_vessel(mut tiles:Vec<Tile>) -> Vec<Tile> {
-//     tiles.sort_by_cached_key(|a| (a.x, a.y));
-
-//     let something = tiles.chunk_by(|a, b| a.x == b.x && a.y == b.y).map(|tiledups| tiledups.into_iter().reduce(|acc, t| &Tile { draught: std::cmp::max(acc.draught, acc.draught), ..acc }));
-
-//     todo!()
-// }
-
-// Should contain a unique Draught for that MMSI to be drawn.
-// pub fn draw_linestring(ls: LineStringM<3857>, draught: Draught) {
-//     ls.0.into_iter().map(f)
-// }
-
-// pub fn coord_to_tile(coord: CoordM<3857>, draught: &Draught) -> Tile {
-
-// }
 
 pub fn draw_line(from: Point, to: Point) -> Vec<Point> {
     let mut coordinates: Vec<Point> = vec![];
@@ -379,5 +382,15 @@ mod tests {
                 max_width: Some(4)
             }
         );
+    }
+
+    #[test]
+    fn coord_to_point() {
+        let cass_point = Point {x: 34586, y: 20073}; // At zoom 16
+        let cass_4326_coord = CoordM::<4326> {x: 9.99083572, y: 57.01233944, m: 69.0};
+
+        let result = point_to_grid(cass_4326_coord, 16);
+
+        assert_eq!(cass_point, result);
     }
 }
