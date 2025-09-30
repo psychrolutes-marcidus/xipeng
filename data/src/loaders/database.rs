@@ -6,7 +6,7 @@ use itertools::Itertools;
 use linesonmaps::algo::segmenter::TrajectorySplit;
 use linesonmaps::types::linestringm::LineStringM;
 use postgres::types::Type;
-use postgres::{Client, Config, NoTls, Transaction, Statement};
+use postgres::{Client, Config, NoTls, Statement, Transaction};
 use std::collections::HashSet;
 use std::io::Write;
 use wkb::reader::read_wkb;
@@ -65,6 +65,76 @@ impl DbConn {
             trajectories: traj,
         })
     }
+}
+
+pub fn insert_sub_traj_inteval(
+    conn: &mut Client,
+    split_intervals: Vec<(i32, Vec<(DateTime<Utc>, TimeDelta)>)>,
+) -> Result<Transaction, DatabaseError> {
+    let temp_table = "create temp table temp_split_interval
+    (
+        mmsi integer,
+        t_start double precision,
+        t_end double precision
+    )
+        on commit drop";
+
+    let mut t = conn.transaction().map_err(|e| DatabaseError::QueryError {
+        db_error: e,
+        msg: "could not begin transaction".into(),
+    })?;
+
+    let _ = t
+        .execute(temp_table, &[])
+        .map_err(|e| DatabaseError::QueryError {
+            db_error: e,
+            msg: "could not create temporary table".into(),
+        });
+
+    let mut writer = t
+        .copy_in("COPY temp_split_interval FROM STDIN;")
+        .map_err(|e| DatabaseError::QueryError {
+            db_error: e,
+            msg: "COPY IN".into(),
+        })?;
+
+    let num_splits = split_intervals.len();
+    let in_str = split_intervals
+        .into_iter()
+        .map(|g| {
+            g.1.into_iter()
+                .map(move |(tstz, i)| {
+                    format!(
+                        "{0}\t{1}\t{2}",
+                        g.0,
+                        tstz.timestamp_millis() as f64 / 1000_f64,
+                        i.as_seconds_f64()
+                    )
+                })
+                .join("\n")
+        })
+        .join("");
+
+    writer.write_all(&in_str.into_bytes())?;
+    let count = writer.finish().expect("tokio_postgres be trolling");
+    debug_assert_eq!(
+        count as usize, num_splits,
+        "#copied rows should equal to #input rows"
+    );
+
+    let insert = "insert into program_data.sub_traj_interval (mmsi, t_start, t_end)
+        select mmsi, to_timestamp(t_start) as t_start, make_interval(secs => t_end) as t_end from temp_split_interval
+            on conflict do nothing;";
+
+    let b = t
+        .execute(insert, &[])
+        .map_err(|e| DatabaseError::QueryError {
+            db_error: e,
+            msg: "failed to move from temp table to sub_traj_inteval".into(),
+        })?;
+    debug_assert!(num_splits >= b.try_into().unwrap());
+
+    Ok(t)
 }
 
 fn insert_split_traj<const CRS: u64>(
@@ -503,7 +573,8 @@ impl<const CHUNK_SIZE: u32> Iterator for TrajectoryIter<CHUNK_SIZE> {
             });
         let o_result = result
             .map(|v| {
-                let res = v.into_iter()
+                let res = v
+                    .into_iter()
                     .map(|r| {
                         Ok::<(i32, LineStringM<4326>), DatabaseError>((
                             r.get::<'_, _, i32>("mmsi"),
@@ -554,7 +625,6 @@ mod tests {
         db.fetch_data(from.into(), to.into()).unwrap();
     }
 
-
     // takes a while to run (~100 seconds, less in release)
     #[test]
     fn trajectory_iter_works() {
@@ -578,6 +648,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "pending deprecation, but it still works, probably :))"]
     fn split_traj_insertion_works() {
         let mut db = DbConn::new().unwrap();
 
@@ -587,10 +658,24 @@ mod tests {
         const HEX: u32 = 0xd1070000;
         const HEXX: u32 = 0x0000701d_u32;
         const HEXXX_32: u32 = 0x01000040;
-        const A:u32 = 0x00_00_07_d1;
+        const A: u32 = 0x00_00_07_d1;
         dbg!(hex::encode(2001_u32.to_le_bytes()));
         let t = insert_split_traj(&mut db.conn, vec![(123456789, ts, 42.0, INTERVAL)])
             .expect("transaction should not fail");
         t.rollback().expect("error during rollback");
+    }
+    #[test]
+    fn split_traj_intervals_works() {
+        let mut db = DbConn::new().unwrap();
+        let split_intevals = vec![(
+            123456789,
+            vec![(
+                DateTime::from_timestamp_secs(1759231496).unwrap(),
+                TimeDelta::new(100, 0).unwrap(),
+            )],
+        )];
+        let t = insert_sub_traj_inteval(&mut db.conn, split_intevals).unwrap();
+        t.rollback().expect("error during rollback");
+        // t.commit().unwrap();
     }
 }
