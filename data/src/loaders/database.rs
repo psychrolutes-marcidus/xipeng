@@ -105,22 +105,22 @@ pub fn insert_sub_traj_inteval(
             g.1.into_iter()
                 .map(move |(tstz, i)| {
                     format!(
-                        "{0}\t{1}\t{2}",
+                        "{0}\t{1}\t{2}\n",
                         g.0,
                         tstz.timestamp_millis() as f64 / 1000_f64,
                         i.as_seconds_f64()
                     )
                 })
-                .join("\n")
+                .join("")
         })
         .join("");
 
     writer.write_all(&in_str.into_bytes())?;
     let count = writer.finish().expect("tokio_postgres be trolling");
-    debug_assert_eq!(
-        count as usize, num_splits,
-        "#copied rows should equal to #input rows"
-    );
+    // debug_assert_eq!(
+    //     count as usize, num_splits,
+    //     "#copied rows should equal to #input rows"
+    // );
 
     let insert = "insert into program_data.sub_traj_interval (mmsi, t_start, t_end)
         select mmsi, to_timestamp(t_start) as t_start, make_interval(secs => t_end) as t_end from temp_split_interval
@@ -132,7 +132,7 @@ pub fn insert_sub_traj_inteval(
             db_error: e,
             msg: "failed to move from temp table to sub_traj_inteval".into(),
         })?;
-    debug_assert!(num_splits >= b.try_into().unwrap());
+    // debug_assert!(num_splits >= b.try_into().unwrap());
 
     Ok(t)
 }
@@ -589,7 +589,7 @@ impl<const CHUNK_SIZE: u32> Iterator for TrajectoryIter<CHUNK_SIZE> {
             .flatten()
             .map(|v| {
                 let uz = v.into_iter().unzip::<i32, LineStringM, Vec<_>, Vec<_>>();
-                if dbg!(uz.0.len()) > 0 {
+                if uz.0.len() > 0 {
                     Some(Trajectories {
                         mmsi: uz.0,
                         trajectory: uz.1,

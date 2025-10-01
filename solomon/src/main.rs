@@ -1,9 +1,11 @@
 use chrono::DateTime;
 use data::loaders::database::DbConn;
-use dotenvy::*;
+use data::loaders::database::TrajectoryIter;
+use data::loaders::database::insert_sub_traj_inteval;
+use dotenvy::dotenv;
 use geo::Distance;
 use itertools::{self, Itertools};
-use linesonmaps::algo::segmenter::{TrajectorySplit, segmenter};
+use linesonmaps::algo::segmenter::{TrajectorySplit, segment_timestamp, segmenter};
 use linesonmaps::types::linestringm::LineStringM;
 use linesonmaps::types::pointm::PointM;
 use rayon::prelude::*;
@@ -18,14 +20,38 @@ type MMSI = i32;
 fn main() {
     dotenv().expect("failed to load environment variables");
 
-    let dist_thres = (1..).into_iter().map(|p| p as f64 * 100_f64);
-    let time_thres = (1..).into_iter().map(|p| p as f64 * 20_f64);
-    let cartesian = dist_thres
-        .take_while(|d| *d <= 2000.)
-        .cartesian_product(time_thres.take_while(|t| *t <= 360.)).collect_vec();
+    // let dist_thres = (1..).into_iter().map(|p| p as f64 * 100_f64);
+    // let time_thres = (1..).into_iter().map(|p| p as f64 * 20_f64);
+    // let cartesian = dist_thres
+    //     .take_while(|d| *d <= 2000.)
+    //     .cartesian_product(time_thres.take_while(|t| *t <= 360.)).collect_vec();
 
-    dbg!(cartesian.len());
+    // dbg!(cartesian.len());
+    let mut conn = DbConn::new().expect("failed to establish database connection");
+    let func = |f, l| dist(f, l, 1000_f64) || time_dist(f, l, 60_f64);
+    let it =
+        TrajectoryIter::<500>::new(DbConn::new().expect("failed to establish database connection"))
+            .expect("failed to create select iterator");
 
+    let _ = it
+        .map(|ts| {
+            let commit_res = ts.map(|t| {
+                let z = t
+                    .mmsi
+                    .into_iter()
+                    .zip_eq(t.trajectory)
+                    .map(|(mmsi, traj)| (mmsi, segment_timestamp(traj, func)))
+                    .collect_vec();
+                let t = insert_sub_traj_inteval(&mut conn.conn, z)
+                    .expect("database error")
+                    .commit();
+                t
+            });
+            commit_res
+        })
+        .flatten_ok()
+        .collect::<Result<Vec<_>, _>>()
+        .expect("failed to process trajectories");
     println!("Hello, world!");
 }
 
