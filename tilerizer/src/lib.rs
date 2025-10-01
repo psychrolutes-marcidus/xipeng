@@ -10,10 +10,16 @@ const SEC_TO_MILLISEC: f64 = 1000.0;
 pub const SINGLE_VESSEL: u64 = 0;
 pub const MULTI_VESSEL: u64 = 1;
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct Point {
     pub x: i32,
     pub y: i32,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct PointWTime {
+    pub point: Point,
+    pub time_stamps: Vec<(DateTime<Utc>, DateTime<Utc>)>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -31,6 +37,18 @@ pub struct Tile {
     pub min_width: Option<u32>,
     pub max_width: Option<u32>,
 }
+
+pub trait Combineable<T> {
+    fn combine(&self, other: T) -> Self;
+}
+
+// impl Combineable<PointWTime> for PointWTime {
+//     fn combine(&self, other: PointWTime) -> Self {
+//         Self { time_stamps: () }
+
+//         todo!()
+//     }
+// }
 
 pub trait Zoom {
     fn change_zoom(&mut self, zoom_level: i32);
@@ -62,14 +80,105 @@ impl std::ops::Sub for Point {
     }
 }
 
+pub fn draw_linestring2(ls: LineStringM<4326>, zoom_level: i32, sampling_zoom_level: i32) -> Vec<PointWTime> {
+    let point_ext: Vec<Vec<PointWTime>> = ls.points().map(|p| (point_to_grid(p.coord, sampling_zoom_level), DateTime::from_timestamp_secs(p.coord.m as i64).unwrap())).tuple_windows().map(|((ap,at),(bp, bt))| interpolate_time_to_point(draw_line(ap, bp), at, bt)).collect();
+
+    // Reduce after this.
+
+    todo!()
+}
+
+pub fn interpolate_time_to_point(points: Vec<Point>, time_from: DateTime<Utc>, time_to: DateTime<Utc>) -> Vec<PointWTime> {
+    let dtime = time_to - time_from;
+
+    let len = points.len();
+
+    if len < 1 {
+        return Vec::new();
+    }
+
+    let dtime =  dtime / (len as i32);
+
+    points.into_iter().enumerate().map(|(i, p)| PointWTime {point: p, time_stamps: vec![(std::cmp::max(time_from, time_from + dtime * i as i32 - dtime / 2), std::cmp::min(time_to, time_from + dtime * i as i32 + dtime / 2 ))] } ).collect()
+
+
+}
+
+// First iteration
 pub fn draw_linestring(
-    ls: LineStringM<3857>,
+    ls: LineStringM<4326>,
+    mmsi: i32,
+    ships: &data::tables::Ships,
     zoom_level: i32,
     sampling_zoom_level: i32,
 ) -> Vec<Tile> {
-    // ls.lines().map(|x| )
+    let time_start =
+        DateTime::from_timestamp_secs(ls.0.first().map(|x| x.m).unwrap() as i64).unwrap();
+    let time_end = DateTime::from_timestamp_secs(ls.0.last().map(|x| x.m).unwrap() as i64).unwrap();
 
-    todo!()
+    let draughts: Vec<(DateTime<Utc>, DateTime<Utc>, f32)> = itertools::izip!(
+        &ships.ship_draught.mmsi,
+        &ships.ship_draught.time_begin,
+        &ships.ship_draught.time_end,
+        &ships.ship_draught.draught
+    )
+    .filter(|(m, ts, te, _)| **m == mmsi && **ts <= time_end && **te >= time_start)
+    .map(|(_, ts, te, d)| (*ts, *te, *d))
+    .collect();
+
+    let sogs: Vec<(DateTime<Utc>, f32)> =
+        itertools::izip!(&ships.sog.mmsi, &ships.sog.time, &ships.sog.sog)
+            .filter(|(m, t, _)| **m == mmsi && **t <= time_end && **t >= time_start)
+            .map(|(_, t, s)| (*t, *s))
+            .collect();
+
+    let (width, length) = itertools::izip!(
+        &ships.dimensions.mmsi,
+        &ships.dimensions.width,
+        &ships.dimensions.length
+    )
+    .find(|(m, _, _)| **m == mmsi)
+    .map(|(_, w, l)| (*w as u32, *l as u32))
+    .unzip();
+
+    let tiles: Vec<Tile> = ls
+        .points()
+        .map(|p| {
+            (
+                point_to_grid(p.coord, sampling_zoom_level),
+                DateTime::from_timestamp_secs(p.coord.m as i64).unwrap(),
+            )
+        })
+        .map(|(p, t)| {
+            (
+                p,
+                t,
+                draughts
+                    .iter()
+                    .find(|(ts, te, _)| *ts <= t && *te >= t)
+                    .map(|(_, _, d)| *d as i32),
+                sogs.iter().find(|(ts, _)| *ts == t).map(|(_, s)| s),
+            )
+        })
+        .tuple_windows()
+        .map(|(a, b)| {
+            points_to_tiles(
+                draw_line(a.0, b.0),
+                a.0,
+                b.0,
+                sampling_zoom_level,
+                a.2,
+                a.1,
+                b.1,
+                a.3.copied(),
+                length,
+                width,
+            )
+        })
+        .flatten().map(|mut p| {p.change_zoom(zoom_level); p})
+        .collect();
+
+    combine_tiles::<SINGLE_VESSEL>(tiles)
 }
 
 pub fn point_to_grid(point: CoordM<4326>, sampling_zoom_level: i32) -> Point {
