@@ -156,11 +156,15 @@ where
         .expect("failed to convert measure value to DateTime object, measure value may be too big");
 
     debug_assert!(
+        times.windows(2).all(
+            |p| ((p[1].0 - (p[0].0 + p[0].1)).num_milliseconds() <= 1000)
+                || p[1].0 >= p[0].0 + p[0].1 // i.e. intervals do not overlap with eachother for more than 1 second
+        ),
+        "time intervals should be non-overlapping (within a threshold), max overlap = {0:?} seconds",
         times
-            .clone()
             .windows(2)
-            .all(|p| ((p[1].0 + p[1].1) - (p[0].0 + p[0].1)).num_milliseconds() <= 1000),
-        "time intervals should be non-overlapping (within a threshold)"
+            .map(|p| (p[1].0 - (p[0].0 + p[0].1)).num_seconds())
+            .max()
     );
 
     times
@@ -244,5 +248,25 @@ mod tests {
             TrajectorySplit::concat_to_linestring(res).unwrap().0.len(),
             lsm.0.len()
         );
+    }
+
+    #[test]
+    fn funny_trajectory_segmenter_time_stamps() {
+        const HEXSTRING: &str = include_str!("./resources/207138000.txt");
+
+        let bytea = hex::decode(HEXSTRING).unwrap();
+        let wkb = read_wkb(&bytea).unwrap();
+        let lsm = LineStringM::<4326>::try_from(wkb).unwrap();
+        let lsm = LineStringM::new(lsm.0).unwrap();
+        let mut lsm_s = lsm.clone();
+
+        let func = |f: PointM, s: PointM| {
+            geo::algorithm::line_measures::metric_spaces::Geodesic.distance(f, s) <= 1000.
+                || s.coord.m - f.coord.m <= 60.
+        };
+
+        let timestamps = segment_timestamp(lsm.clone(), func); // note: there are assertions inside the function that tests if ouput is valid
+        // dbg!(timestamps);
+        // assert!(false);
     }
 }
