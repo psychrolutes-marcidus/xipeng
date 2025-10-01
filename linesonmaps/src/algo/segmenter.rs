@@ -1,3 +1,7 @@
+use std::ops::Sub;
+
+use geo_traits::{CoordTrait, GeometryTrait, LineTrait};
+
 use crate::types::linestringm::LineStringM;
 use crate::types::multilinestringm::MultiLineStringM;
 use crate::types::pointm::PointM;
@@ -68,18 +72,45 @@ where
     output.into()
 }
 
+
+pub fn line_to_square<Line:LineTrait + std::fmt::Debug>(line: Line, a: f64, b: f64, c: f64, d: f64) 
+where 
+    Line: GeometryTrait<T = f64>
+{
+    let coords = &line.coords();
+    let dx = line.end().x()-line.start().x();
+    dbg!(&dx);
+    let slope = line.end().y() - line.start().y()/(line.end().x() - line.start().x());
+    dbg!(&slope);
+
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
 
     use super::*;
     use crate::types::coordm::CoordM;
+    use crate::types::linem::LineM;
     use crate::types::multilinestringm::MultiLineStringM;
-    use geo::Distance;
+    use geo::{coord, Distance, Line};
     use hex::encode;
     use pretty_assertions::{assert_eq, assert_ne};
     use wkb::reader::read_wkb;
     use wkb::writer::WriteOptions;
+
+    #[test]
+    fn dumb_test() {
+        //let line = Line::new(coord! { x: 0., y: 0. }, coord! { x: 1., y: 2. });
+        let coords: Vec<CoordM<4326>> = [(1.0, 2.0, 0.0), (5.0, 3.0, 1.0), (3.0, 4.0, 2.0)]
+            .map(|f| f.into())
+            .to_vec();
+
+        let first_line = LineM::from((coords[0],coords[1]));
+
+        line_to_square(first_line, 1.0,1.0,1.0,1.0);
+    }
+
     #[test]
     fn no_segment() {
         let coords: Vec<CoordM<4326>> = [(1.0, 2.0, 0.0), (2.0, 3.0, 1.0), (3.0, 4.0, 2.0)]
