@@ -1,5 +1,6 @@
 use std::ops::Sub;
 
+use geo::coord;
 use geo_traits::{CoordTrait, GeometryTrait, LineTrait};
 
 use crate::types::linestringm::LineStringM;
@@ -77,11 +78,25 @@ pub fn line_to_square<Line:LineTrait + std::fmt::Debug>(line: Line, a: f64, b: f
 where 
     Line: GeometryTrait<T = f64>
 {
+    let dx = line.end().x() - line.start().x();
+    let dy = line.end().y() - line.start().y();
+    let dnorm = f64::sqrt(dx*dx+dy*dy);
+    let ndx = dx/dnorm;
+    let ndy = dy/dnorm;
+    let vec = vec![ndx,ndy]; // describes the direction of the line as a normal vector
+    let vec_orth_c = vec![-ndy*c, ndx*c]; // vec_orth_c/d project their length orthogonally along the normal vector by the given lengths c,d respectively
+    let vec_orth_d = vec![ndy*d, ndx*d];
+    let c_coord = vec![line.start().x()+vec_orth_c.first().unwrap(), line.start().y()+vec_orth_c.last().unwrap()]; // coordinate of left (port) of ship extent
+    let d_coord = vec![line.start().x()+vec_orth_d.first().unwrap(), line.start().y()+vec_orth_d.last().unwrap()]; // coordinate of right (startboard) of ship extent
+    dbg!(c_coord);
+    dbg!(d_coord);
+
+    
+    
     let coords = &line.coords();
-    let dx = line.end().x()-line.start().x();
-    dbg!(&dx);
+
     let slope = line.end().y() - line.start().y()/(line.end().x() - line.start().x());
-    dbg!(&slope);
+
 
 }
 
@@ -101,14 +116,14 @@ mod tests {
 
     #[test]
     fn dumb_test() {
-        //let line = Line::new(coord! { x: 0., y: 0. }, coord! { x: 1., y: 2. });
-        let coords: Vec<CoordM<4326>> = [(1.0, 2.0, 0.0), (5.0, 3.0, 1.0), (3.0, 4.0, 2.0)]
+        let line = Line::new(coord! { x: 0., y: 0. }, coord! { x: 4., y: 1. });
+        /*let coords: Vec<CoordM<4326>> = [(1.0, 2.0, 0.0), (5.0, 3.0, 1.0), (3.0, 4.0, 2.0)]
             .map(|f| f.into())
             .to_vec();
-
         let first_line = LineM::from((coords[0],coords[1]));
+        */
 
-        line_to_square(first_line, 1.0,1.0,1.0,1.0);
+        line_to_square(line, 1.0,1.0,1.0,1.0);
     }
 
     #[test]
