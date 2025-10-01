@@ -1,3 +1,4 @@
+use chrono::{DateTime, TimeDelta, Utc};
 use wkb::writer::{WriteOptions, write_line_string, write_point};
 
 use crate::types::coordm::CoordM;
@@ -122,6 +123,47 @@ where
     }
 
     splits
+}
+
+pub fn segment_timestamp<const CRS: u64, F>(
+    ls: LineStringM<CRS>,
+    func: F,
+) -> Vec<(DateTime<Utc>, TimeDelta)>
+where
+    F: Fn(PointM<CRS>, PointM<CRS>) -> bool,
+{
+    let segments = segmenter(ls, func);
+
+    let times = segments
+        .into_iter()
+        .map(|ts| match ts {
+            TrajectorySplit::Point(p) => Some((
+                DateTime::from_timestamp_secs(p.coord.m as i64)?,
+                TimeDelta::zero(),
+            )), // casting to integer will truncate/round down, this is probably fine for creating a start interval
+            TrajectorySplit::SubTrajectory(ls) => {
+                let first = DateTime::from_timestamp_secs(ls.0.first()?.m as i64)?; // Linestrings generated from `segmenter` always have length > 1, so there should be some points
+                const {
+                    // quick and dirty testing suggests a too large timestamp is somewhere between 2^42 and 2^43 (i.e. 141338-07-19 02:25:04+00 and 280707-02-04 04:50:08+00), i would be shocked if GST still uses this program by then
+                    assert!(DateTime::from_timestamp_secs(1 << 43).is_none());
+                    assert!(DateTime::from_timestamp_secs(1 << 42).is_some());
+                }
+                let last = DateTime::from_timestamp_secs(ls.0.last()?.m.ceil() as i64)?; // calling ceil causes some loss in precision, but ensures last point is included in interval, 
+                Some((first, last - first))
+            }
+        })
+        .collect::<Option<Vec<_>>>()
+        .expect("failed to convert measure value to DateTime object, measure value may be too big");
+
+    debug_assert!(
+        times
+            .clone()
+            .windows(2)
+            .all(|p| ((p[1].0 + p[1].1) - (p[0].0 + p[0].1)).num_milliseconds() <= 1000),
+        "time intervals should be non-overlapping (within a threshold)"
+    );
+
+    times
 }
 
 #[cfg(test)]
