@@ -85,11 +85,15 @@ where
     let ndy = dy/dnorm;
     let vec = vec![ndx,ndy]; // describes the direction of the line as a normal vector
     let vec_orth_c = vec![-ndy*c, ndx*c]; // vec_orth_c/d project their length orthogonally along the normal vector by the given lengths c,d respectively
-    let vec_orth_d = vec![ndy*d, ndx*d];
-    let c_coord = vec![line.start().x()+vec_orth_c.first().unwrap(), line.start().y()+vec_orth_c.last().unwrap()]; // coordinate of left (port) of ship extent
-    let d_coord = vec![line.start().x()+vec_orth_d.first().unwrap(), line.start().y()+vec_orth_d.last().unwrap()]; // coordinate of right (startboard) of ship extent
+    let vec_orth_d = vec![ndy*d, -ndx*d];
+    let c_coord = vec![line.start().x()+vec_orth_c.first().unwrap(), line.start().y()+vec_orth_c.last().unwrap()]; // coordinate of left (port) of line AABB
+    let d_coord = vec![line.start().x()+vec_orth_d.first().unwrap(), line.start().y()+vec_orth_d.last().unwrap()]; // coordinate of right (startboard) of line AABB
+    let c_coord_end = vec![line.end().x()+vec_orth_c.first().unwrap(), line.end().y()+vec_orth_c.last().unwrap()];
+    let d_coord_end = vec![line.end().x()+vec_orth_d.first().unwrap(), line.end().y()+vec_orth_d.last().unwrap()];
     dbg!(c_coord);
     dbg!(d_coord);
+    dbg!(c_coord_end);
+    dbg!(d_coord_end);
 
     
     
