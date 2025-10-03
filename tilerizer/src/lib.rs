@@ -19,6 +19,7 @@ pub struct Point {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct PointWTime {
     pub point: Point,
+    pub z: i32,
     pub time_stamps: Vec<(DateTime<Utc>, DateTime<Utc>)>,
 }
 
@@ -42,30 +43,90 @@ pub trait Combineable<T> {
     fn combine(&self, other: T) -> Self;
 }
 
-// impl Combineable<PointWTime> for PointWTime {
-//     fn combine(&self, other: PointWTime) -> Self {
-//         Self { time_stamps: () }
+impl Combineable<PointWTime> for PointWTime {
+    fn combine(&self, other: PointWTime) -> Self {
+        let size = self.time_stamps.len() + other.time_stamps.len();
 
-//         todo!()
-//     }
-// }
+        let time = self
+            .time_stamps
+            .iter()
+            .chain(other.time_stamps.iter())
+            .sorted_unstable_by(|a, b| Ord::cmp(&a.0, &b.0))
+            .fold(Vec::with_capacity(size), |mut acc, t| {
+                let timestamp = acc.last().and_then(|x: &(DateTime<Utc>, DateTime<Utc>)| {
+                    if x.0 <= t.0 && x.1 >= t.0 {
+                        Some((x.0, cmp::max(x.1, t.1)))
+                    } else {
+                        None
+                    }
+                });
+
+                let should_add = acc.last_mut().and_then(|x| {
+                    timestamp.as_ref().and_then(|y| {
+                        *x = *y;
+                        Some(())
+                    })
+                });
+
+                if should_add.is_none() {
+                    acc.push(*t);
+                }
+                acc
+            });
+
+        Self {
+            time_stamps: time,
+            ..*self
+        }
+    }
+}
 
 pub trait Zoom {
-    fn change_zoom(&mut self, zoom_level: i32);
+    fn change_zoom(self, zoom_level: i32) -> Self;
 }
 
 impl Zoom for Tile {
-    fn change_zoom(&mut self, zoom_level: i32) {
+    fn change_zoom(self, zoom_level: i32) -> Self {
         let change = self.z - zoom_level;
+        let x;
+        let y;
 
         if change > 0 {
-            self.x /= 4_i32.pow(change as u32);
-            self.y /= 4_i32.pow(change as u32);
+            x = self.x / 2_i32.pow(change.abs() as u32);
+            y = self.y / 2_i32.pow(change.abs() as u32);
         } else {
-            self.x *= 4_i32.pow(change as u32);
-            self.y *= 4_i32.pow(change as u32);
+            x = self.x * 2_i32.pow(change.abs() as u32);
+            y = self.y * 2_i32.pow(change.abs() as u32);
         }
-        self.z = zoom_level;
+
+        Self {
+            x,
+            y,
+            z: zoom_level,
+            ..self
+        }
+    }
+}
+
+impl Zoom for PointWTime {
+    fn change_zoom(self, zoom_level: i32) -> Self {
+        let change = self.z - zoom_level;
+        let x;
+        let y;
+
+        if change > 0 {
+            x = self.point.x / 2_i32.pow(change.abs() as u32);
+            y = self.point.y / 2_i32.pow(change.abs() as u32);
+        } else {
+            x = self.point.x * 2_i32.pow(change.abs() as u32);
+            y = self.point.y * 2_i32.pow(change.abs() as u32);
+        }
+
+        Self {
+            point: Point { x, y },
+            z: zoom_level,
+            ..self
+       }
     }
 }
 
@@ -80,28 +141,64 @@ impl std::ops::Sub for Point {
     }
 }
 
-pub fn draw_linestring2(ls: LineStringM<4326>, zoom_level: i32, sampling_zoom_level: i32) -> Vec<PointWTime> {
-    let point_ext: Vec<Vec<PointWTime>> = ls.points().map(|p| (point_to_grid(p.coord, sampling_zoom_level), DateTime::from_timestamp_secs(p.coord.m as i64).unwrap())).tuple_windows().map(|((ap,at),(bp, bt))| interpolate_time_to_point(draw_line(ap, bp), at, bt)).collect();
+pub fn draw_linestring2(
+    ls: LineStringM<4326>,
+    zoom_level: i32,
+    sampling_zoom_level: i32,
+) -> Vec<PointWTime> {
+    let sampling_zoom_level = cmp::min(sampling_zoom_level, 22);
+
+    let mut point_ext: Vec<PointWTime> = ls
+        .points()
+        .map(|p| {
+            (
+                point_to_grid(p.coord, sampling_zoom_level),
+                DateTime::from_timestamp_secs(p.coord.m as i64).unwrap(),
+            )
+        })
+        .tuple_windows()
+        .map(|((ap, at), (bp, bt))| enhance_point(draw_line(ap, bp), at, bt, sampling_zoom_level))
+        .flatten()
+        .map(|x| x.change_zoom(zoom_level))
+        .collect();
 
     // Reduce after this.
 
-    todo!()
+    point_ext.sort_unstable_by(|a, b| (a.point.x, a.point.y).cmp(&(b.point.x, b.point.y)));
+
+    let something: Vec<PointWTime> = point_ext.chunk_by(|a,b| a.point == b.point).map(|x| x.to_owned().into_iter().reduce(|acc, x| acc.combine(x))).flatten().collect::<Vec<PointWTime>>();
+
+    something
 }
 
-pub fn interpolate_time_to_point(points: Vec<Point>, time_from: DateTime<Utc>, time_to: DateTime<Utc>) -> Vec<PointWTime> {
+pub fn enhance_point(
+    points: Vec<Point>,
+    time_from: DateTime<Utc>,
+    time_to: DateTime<Utc>,
+    sampling_zoom_level: i32,
+) -> Vec<PointWTime> {
     let dtime = time_to - time_from;
 
-    let len = points.len();
+    let len = points.len() - 1;
 
     if len < 1 {
         return Vec::new();
     }
 
-    let dtime =  dtime / (len as i32);
+    let dtime = dtime / (len as i32);
 
-    points.into_iter().enumerate().map(|(i, p)| PointWTime {point: p, time_stamps: vec![(std::cmp::max(time_from, time_from + dtime * i as i32 - dtime / 2), std::cmp::min(time_to, time_from + dtime * i as i32 + dtime / 2 ))] } ).collect()
-
-
+    points
+        .into_iter()
+        .enumerate()
+        .map(|(i, p)| PointWTime {
+            point: p,
+            time_stamps: vec![(
+                std::cmp::max(time_from, time_from + dtime * i as i32 - dtime / 2),
+                std::cmp::min(time_to, time_from + dtime * i as i32 + dtime / 2 + chrono::TimeDelta::nanoseconds(1)), // The one nanoseconds fix the reduce step. If it is not there, then the timestamps will not overlap and cannot be reduced. It also fixes performance which is very nice.
+            )],
+            z: sampling_zoom_level,
+        })
+        .collect()
 }
 
 // First iteration
@@ -175,7 +272,8 @@ pub fn draw_linestring(
                 width,
             )
         })
-        .flatten().map(|mut p| {p.change_zoom(zoom_level); p})
+        .flatten()
+        .map(|p| p.change_zoom(zoom_level))
         .collect();
 
     combine_tiles::<SINGLE_VESSEL>(tiles)
@@ -251,7 +349,7 @@ pub fn combine_tiles<const C: u64>(mut tiles: Vec<Tile>) -> Vec<Tile> {
                 .into_iter()
                 .reduce(|acc, t| combine_tile::<C>(acc, t))
         })
-        .filter_map(|x| x)
+        .flatten()
         .collect()
 }
 
@@ -508,5 +606,29 @@ mod tests {
         let result = point_to_grid(cass_4326_coord, 16);
 
         assert_eq!(cass_point, result);
+    }
+
+    #[test]
+    fn combine_points() {
+        let point = Point {x: 0, y: 0};
+        let points1 = PointWTime {point, z: 22, time_stamps: vec![(DateTime::from_timestamp_nanos(1000), DateTime::from_timestamp_nanos(2000)), (DateTime::from_timestamp_nanos(3000), DateTime::from_timestamp_nanos(4000))]};
+        let points2 = PointWTime {point, z: 22, time_stamps: vec![(DateTime::from_timestamp_nanos(5000), DateTime::from_timestamp_nanos(6000)), (DateTime::from_timestamp_nanos(1500), DateTime::from_timestamp_nanos(3200))]};
+        let comb = PointWTime {point, z: 22, time_stamps: vec![(DateTime::from_timestamp_nanos(1000), DateTime::from_timestamp_nanos(4000)), (DateTime::from_timestamp_nanos(5000), DateTime::from_timestamp_nanos(6000))]};
+
+
+        let result = points1.combine(points2);
+
+        assert_eq!(comb, result)
+    }
+
+    #[test]
+    fn draw_linestring_level_0_one_timestamp() {
+        let coords = vec![CoordM::<4326> {x: 9.99077490, y: 57.01199765, m: 1759393758.}, CoordM::<4326> {x: 12.59321066, y: 55.68399700, m: 1759397358.}, CoordM::<4326> {x: 8.4437682, y: 55.4616713, m: 1759400958.}, CoordM::<4326> {x: 11.9732157, y: 57.7093381, m: 1759404558.}];
+
+        let ls = LineStringM::new(coords).unwrap();
+
+        let points = draw_linestring2(ls.clone(), 0, 22);
+
+        assert_eq!(points[0].time_stamps.len(), 1);
     }
 }
