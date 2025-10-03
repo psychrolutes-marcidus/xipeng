@@ -126,7 +126,7 @@ impl Zoom for PointWTime {
             point: Point { x, y },
             z: zoom_level,
             ..self
-       }
+        }
     }
 }
 
@@ -164,11 +164,50 @@ pub fn draw_linestring2(
 
     // Reduce after this.
 
-    point_ext.sort_unstable_by(|a, b| (a.point.x, a.point.y).cmp(&(b.point.x, b.point.y)));
+    point_ext.sort_by_cached_key(|a| (a.point.x, a.point.y));
 
-    let something: Vec<PointWTime> = point_ext.chunk_by(|a,b| a.point == b.point).map(|x| x.to_owned().into_iter().reduce(|acc, x| acc.combine(x))).flatten().collect::<Vec<PointWTime>>();
+    let something: Vec<PointWTime> = point_ext
+        .chunk_by(|a, b| a.point == b.point)
+        .map(|x| combine_point_with_time(x))
+        .flatten()
+        .collect::<Vec<PointWTime>>();
 
     something
+}
+
+pub fn combine_point_with_time(points: &[PointWTime]) -> Option<PointWTime> {
+    let first = points.first();
+
+    let size = points.len();
+
+    let time: Vec<(DateTime<Utc>, DateTime<Utc>)> = points
+        .iter()
+        .map(|x| &x.time_stamps)
+        .flatten()
+        .sorted_unstable_by(|a, b| Ord::cmp(&a.0, &b.0))
+        .fold(Vec::with_capacity(size), |mut acc, t| {
+            let timestamp = acc.last().and_then(|x: &(DateTime<Utc>, DateTime<Utc>)| {
+                if x.0 <= t.0 && x.1 >= t.0 {
+                    Some((x.0, cmp::max(x.1, t.1)))
+                } else {
+                    None
+                }
+            });
+
+            let should_add = acc.last_mut().and_then(|x| {
+                timestamp.as_ref().and_then(|y| {
+                    *x = *y;
+                    Some(())
+                })
+            });
+
+            if should_add.is_none() {
+                acc.push(*t);
+            }
+            acc
+        });
+
+    first.and_then(|p| Some(PointWTime { point: p.point, z: p.z, time_stamps: time }))
 }
 
 pub fn enhance_point(
@@ -194,7 +233,10 @@ pub fn enhance_point(
             point: p,
             time_stamps: vec![(
                 std::cmp::max(time_from, time_from + dtime * i as i32 - dtime / 2),
-                std::cmp::min(time_to, time_from + dtime * i as i32 + dtime / 2 + chrono::TimeDelta::nanoseconds(1)), // The one nanoseconds fix the reduce step. If it is not there, then the timestamps will not overlap and cannot be reduced. It also fixes performance which is very nice.
+                std::cmp::min(
+                    time_to,
+                    time_from + dtime * i as i32 + dtime / 2 + chrono::TimeDelta::nanoseconds(1),
+                ), // The one nanoseconds fix the reduce step. If it is not there, then the timestamps will not overlap and cannot be reduced. It also fixes performance which is very nice.
             )],
             z: sampling_zoom_level,
         })
@@ -610,11 +652,49 @@ mod tests {
 
     #[test]
     fn combine_points() {
-        let point = Point {x: 0, y: 0};
-        let points1 = PointWTime {point, z: 22, time_stamps: vec![(DateTime::from_timestamp_nanos(1000), DateTime::from_timestamp_nanos(2000)), (DateTime::from_timestamp_nanos(3000), DateTime::from_timestamp_nanos(4000))]};
-        let points2 = PointWTime {point, z: 22, time_stamps: vec![(DateTime::from_timestamp_nanos(5000), DateTime::from_timestamp_nanos(6000)), (DateTime::from_timestamp_nanos(1500), DateTime::from_timestamp_nanos(3200))]};
-        let comb = PointWTime {point, z: 22, time_stamps: vec![(DateTime::from_timestamp_nanos(1000), DateTime::from_timestamp_nanos(4000)), (DateTime::from_timestamp_nanos(5000), DateTime::from_timestamp_nanos(6000))]};
-
+        let point = Point { x: 0, y: 0 };
+        let points1 = PointWTime {
+            point,
+            z: 22,
+            time_stamps: vec![
+                (
+                    DateTime::from_timestamp_nanos(1000),
+                    DateTime::from_timestamp_nanos(2000),
+                ),
+                (
+                    DateTime::from_timestamp_nanos(3000),
+                    DateTime::from_timestamp_nanos(4000),
+                ),
+            ],
+        };
+        let points2 = PointWTime {
+            point,
+            z: 22,
+            time_stamps: vec![
+                (
+                    DateTime::from_timestamp_nanos(5000),
+                    DateTime::from_timestamp_nanos(6000),
+                ),
+                (
+                    DateTime::from_timestamp_nanos(1500),
+                    DateTime::from_timestamp_nanos(3200),
+                ),
+            ],
+        };
+        let comb = PointWTime {
+            point,
+            z: 22,
+            time_stamps: vec![
+                (
+                    DateTime::from_timestamp_nanos(1000),
+                    DateTime::from_timestamp_nanos(4000),
+                ),
+                (
+                    DateTime::from_timestamp_nanos(5000),
+                    DateTime::from_timestamp_nanos(6000),
+                ),
+            ],
+        };
 
         let result = points1.combine(points2);
 
@@ -623,11 +703,36 @@ mod tests {
 
     #[test]
     fn draw_linestring_level_0_one_timestamp() {
-        let coords = vec![CoordM::<4326> {x: 9.99077490, y: 57.01199765, m: 1759393758.}, CoordM::<4326> {x: 12.59321066, y: 55.68399700, m: 1759397358.}, CoordM::<4326> {x: 8.4437682, y: 55.4616713, m: 1759400958.}, CoordM::<4326> {x: 11.9732157, y: 57.7093381, m: 1759404558.}];
+        let coords = vec![
+            CoordM::<4326> {
+                x: 9.99077490,
+                y: 57.01199765,
+                m: 1759393758.,
+            },
+            CoordM::<4326> {
+                x: 12.59321066,
+                y: 55.68399700,
+                m: 1759397358.,
+            },
+            CoordM::<4326> {
+                x: 8.4437682,
+                y: 55.4616713,
+                m: 1759400958.,
+            },
+            CoordM::<4326> {
+                x: 11.9732157,
+                y: 57.7093381,
+                m: 1759404558.,
+            },
+        ];
 
         let ls = LineStringM::new(coords).unwrap();
 
         let points = draw_linestring2(ls.clone(), 0, 22);
+
+        dbg!(points.len());
+
+        assert!(false);
 
         assert_eq!(points[0].time_stamps.len(), 1);
     }
