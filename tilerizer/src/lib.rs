@@ -730,10 +730,6 @@ mod tests {
 
         let points = draw_linestring2(ls.clone(), 0, 22);
 
-        dbg!(points.len());
-
-        assert!(false);
-
         assert_eq!(points[0].time_stamps.len(), 1);
     }
 }
