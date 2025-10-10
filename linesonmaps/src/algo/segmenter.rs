@@ -174,7 +174,7 @@ where
 mod tests {
     use super::*;
     use crate::types::coordm::CoordM;
-    use geo::Distance;
+    use geo::{Distance, Geodesic};
     use pretty_assertions::{assert_eq, assert_ne};
     use wkb::reader::read_wkb;
 
@@ -268,5 +268,40 @@ mod tests {
         let timestamps = segment_timestamp(lsm.clone(), func); // note: there are assertions inside the function that tests if ouput is valid
         // dbg!(timestamps);
         // assert!(false);
+    }
+
+    #[test]
+    fn le_funny_traj() {
+        const HEXSTRING: &str = include_str!("./resources/205689000.txt");
+
+        let bytea = hex::decode(HEXSTRING).unwrap();
+        let wkb = read_wkb(&bytea).unwrap();
+        let lsm = LineStringM::<4326>::try_from(wkb).unwrap();
+        let lsm = LineStringM::new(lsm.0).unwrap();
+        let mut lsm_s = lsm.clone();
+
+        let func = |f: PointM, s: PointM| {
+            geo::algorithm::line_measures::metric_spaces::Geodesic.distance(f, s) <= 1000.
+                && s.coord.m - f.coord.m <= 60.
+        };
+
+        let splits = segmenter(lsm, func);
+
+        let max_dist = splits
+            .into_iter()
+            .map(|s| match s {
+                TrajectorySplit::Point(p) => 0_f64,
+                TrajectorySplit::SubTrajectory(ls) => ls
+                    .lines()
+                    .map(|l| Geodesic.distance(l.to, l.from))
+                    .max_by(f64::total_cmp)
+                    .unwrap(),
+            })
+            .max_by(f64::total_cmp)
+            .unwrap();
+
+        assert!(false,"{max_dist}");
+        assert!(max_dist<=1000.0,"max distance is greater than maxium distance of 1000 threshold \t max_dist = {max_dist}");
+
     }
 }
