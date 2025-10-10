@@ -6,6 +6,7 @@ pub struct Sog {
     pub mmsi: Vec<MMSIType>,
     pub time: Vec<TimeType>,
     pub sog: Vec<SogType>,
+    pub b_tree_index: std::collections::BTreeMap<(MMSIType, TimeType), usize>,
 }
 
 impl Sog {
@@ -14,6 +15,7 @@ impl Sog {
             mmsi: Vec::new(),
             time: Vec::new(),
             sog: Vec::new(),
+            b_tree_index: std::collections::BTreeMap::new(),
         }
     }
 }

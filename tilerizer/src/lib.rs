@@ -2,15 +2,9 @@ use chrono::prelude::*;
 use data::tables::Ships;
 use itertools::Itertools;
 use linesonmaps::types::{coordm::CoordM, linestringm::LineStringM};
-use std::cmp;
+use std::{cmp, sync::Arc};
 
-const KNOT_TO_MPS: f64 = 0.514444;
-const SEC_TO_MILLISEC: f64 = 1000.0;
-
-pub const SINGLE_VESSEL: u64 = 0;
-pub const MULTI_VESSEL: u64 = 1;
-
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 pub struct Point {
     pub x: i32,
     pub y: i32,
@@ -28,57 +22,15 @@ pub struct Tile {
     pub x: i32,
     pub y: i32,
     pub z: i32,
-    pub max_draught: Option<i32>,
+    pub max_draught: Option<f32>,
     pub distinct_ship_count: u64,
     pub min_sog: Option<f32>,
     pub max_sog: Option<f32>,
     pub cell_oc_time: chrono::TimeDelta,
-    pub min_length: Option<u32>,
-    pub max_length: Option<u32>,
-    pub min_width: Option<u32>,
-    pub max_width: Option<u32>,
-}
-
-pub trait Combineable<T> {
-    fn combine(&self, other: T) -> Self;
-}
-
-impl Combineable<PointWTime> for PointWTime {
-    fn combine(&self, other: PointWTime) -> Self {
-        let size = self.time_stamps.len() + other.time_stamps.len();
-
-        let time = self
-            .time_stamps
-            .iter()
-            .chain(other.time_stamps.iter())
-            .sorted_unstable_by(|a, b| Ord::cmp(&a.0, &b.0))
-            .fold(Vec::with_capacity(size), |mut acc, t| {
-                let timestamp = acc.last().and_then(|x: &(DateTime<Utc>, DateTime<Utc>)| {
-                    if x.0 <= t.0 && x.1 >= t.0 {
-                        Some((x.0, cmp::max(x.1, t.1)))
-                    } else {
-                        None
-                    }
-                });
-
-                let should_add = acc.last_mut().and_then(|x| {
-                    timestamp.as_ref().and_then(|y| {
-                        *x = *y;
-                        Some(())
-                    })
-                });
-
-                if should_add.is_none() {
-                    acc.push(*t);
-                }
-                acc
-            });
-
-        Self {
-            time_stamps: time,
-            ..*self
-        }
-    }
+    pub min_length: Option<f64>,
+    pub max_length: Option<f64>,
+    pub min_width: Option<f64>,
+    pub max_width: Option<f64>,
 }
 
 pub trait Zoom {
@@ -141,7 +93,7 @@ impl std::ops::Sub for Point {
     }
 }
 
-pub fn draw_linestring2(
+pub fn draw_linestring(
     ls: LineStringM<4326>,
     zoom_level: i32,
     sampling_zoom_level: i32,
@@ -162,17 +114,7 @@ pub fn draw_linestring2(
         .map(|x| x.change_zoom(zoom_level))
         .collect();
 
-    // Reduce after this.
-
-    point_ext.sort_by_cached_key(|a| (a.point.x, a.point.y));
-
-    let something: Vec<PointWTime> = point_ext
-        .chunk_by(|a, b| a.point == b.point)
-        .map(|x| combine_point_with_time(x))
-        .flatten()
-        .collect::<Vec<PointWTime>>();
-
-    something
+        point_ext
 }
 
 pub fn combine_point_with_time(points: &[PointWTime]) -> Option<PointWTime> {
@@ -207,7 +149,13 @@ pub fn combine_point_with_time(points: &[PointWTime]) -> Option<PointWTime> {
             acc
         });
 
-    first.and_then(|p| Some(PointWTime { point: p.point, z: p.z, time_stamps: time }))
+    first.and_then(|p| {
+        Some(PointWTime {
+            point: p.point,
+            z: p.z,
+            time_stamps: time,
+        })
+    })
 }
 
 pub fn enhance_point(
@@ -243,84 +191,6 @@ pub fn enhance_point(
         .collect()
 }
 
-// First iteration
-pub fn draw_linestring(
-    ls: LineStringM<4326>,
-    mmsi: i32,
-    ships: &data::tables::Ships,
-    zoom_level: i32,
-    sampling_zoom_level: i32,
-) -> Vec<Tile> {
-    let time_start =
-        DateTime::from_timestamp_secs(ls.0.first().map(|x| x.m).unwrap() as i64).unwrap();
-    let time_end = DateTime::from_timestamp_secs(ls.0.last().map(|x| x.m).unwrap() as i64).unwrap();
-
-    let draughts: Vec<(DateTime<Utc>, DateTime<Utc>, f32)> = itertools::izip!(
-        &ships.ship_draught.mmsi,
-        &ships.ship_draught.time_begin,
-        &ships.ship_draught.time_end,
-        &ships.ship_draught.draught
-    )
-    .filter(|(m, ts, te, _)| **m == mmsi && **ts <= time_end && **te >= time_start)
-    .map(|(_, ts, te, d)| (*ts, *te, *d))
-    .collect();
-
-    let sogs: Vec<(DateTime<Utc>, f32)> =
-        itertools::izip!(&ships.sog.mmsi, &ships.sog.time, &ships.sog.sog)
-            .filter(|(m, t, _)| **m == mmsi && **t <= time_end && **t >= time_start)
-            .map(|(_, t, s)| (*t, *s))
-            .collect();
-
-    let (width, length) = itertools::izip!(
-        &ships.dimensions.mmsi,
-        &ships.dimensions.width,
-        &ships.dimensions.length
-    )
-    .find(|(m, _, _)| **m == mmsi)
-    .map(|(_, w, l)| (*w as u32, *l as u32))
-    .unzip();
-
-    let tiles: Vec<Tile> = ls
-        .points()
-        .map(|p| {
-            (
-                point_to_grid(p.coord, sampling_zoom_level),
-                DateTime::from_timestamp_secs(p.coord.m as i64).unwrap(),
-            )
-        })
-        .map(|(p, t)| {
-            (
-                p,
-                t,
-                draughts
-                    .iter()
-                    .find(|(ts, te, _)| *ts <= t && *te >= t)
-                    .map(|(_, _, d)| *d as i32),
-                sogs.iter().find(|(ts, _)| *ts == t).map(|(_, s)| s),
-            )
-        })
-        .tuple_windows()
-        .map(|(a, b)| {
-            points_to_tiles(
-                draw_line(a.0, b.0),
-                a.0,
-                b.0,
-                sampling_zoom_level,
-                a.2,
-                a.1,
-                b.1,
-                a.3.copied(),
-                length,
-                width,
-            )
-        })
-        .flatten()
-        .map(|p| p.change_zoom(zoom_level))
-        .collect();
-
-    combine_tiles::<SINGLE_VESSEL>(tiles)
-}
-
 pub fn point_to_grid(point: CoordM<4326>, sampling_zoom_level: i32) -> Point {
     use std::f64::consts::*;
 
@@ -334,86 +204,85 @@ pub fn point_to_grid(point: CoordM<4326>, sampling_zoom_level: i32) -> Point {
     Point { x, y }
 }
 
-pub fn points_to_tiles(
-    points: Vec<Point>,
-    point_from: Point,
-    point_to: Point,
-    zoom_level: i32,
-    draught: Option<i32>,
-    time_from: DateTime<Utc>,
-    time_to: DateTime<Utc>,
-    sog: Option<f32>,
-    length: Option<u32>,
-    width: Option<u32>,
-) -> Vec<Tile> {
-    let delta_point = point_to - point_from;
+pub fn points_to_tiles(mut points: Vec<PointWTime>, mmsi: i32, ship_data: Arc<Ships>) -> Vec<Tile> {
+    points.sort_by_cached_key(|a| (a.point.x, a.point.y));
 
-    let max_tiles_dist = std::cmp::max(delta_point.x, delta_point.y);
+    let combined = points
+        .chunk_by(|a, b| a.point == b.point)
+        .map(|x| combine_point_with_time(x))
+        .flatten().map(|p| point_to_tile(&p, mmsi, &ship_data)).collect();
 
-    let mut time_delta = point_time_duration(time_from, time_to, max_tiles_dist);
+    combined
+}
 
-    let time_delta_speed = length
-        .zip(sog)
-        .and_then(|(l, s)| Some((l as f64 / (s as f64 * KNOT_TO_MPS)) * SEC_TO_MILLISEC))
-        .unwrap_or(0.);
+fn point_to_tile(point: &PointWTime, mmsi: i32, ship_data: &Arc<Ships>) -> Tile {
+    let timestamps: &[(DateTime<Utc>, DateTime<Utc>)] = point.time_stamps.as_ref();
 
-    time_delta += chrono::TimeDelta::milliseconds(time_delta_speed as i64);
-
-    let tiles: Vec<Tile> = points
+    let (minsog, maxsog) = timestamps
         .into_iter()
-        .map(|p| Tile {
-            x: p.x,
-            y: p.y,
-            z: zoom_level,
-            max_draught: draught,
-            distinct_ship_count: 1,
-            min_sog: sog,
-            max_sog: sog,
-            cell_oc_time: time_delta,
-            min_length: length,
-            max_length: length,
-            min_width: width,
-            max_width: width,
-        })
-        .collect();
-
-    tiles
-}
-
-pub fn combine_tiles<const C: u64>(mut tiles: Vec<Tile>) -> Vec<Tile> {
-    tiles.sort_unstable_by(|a, b| (a.x, a.y).cmp(&(b.x, b.y)));
-
-    tiles
-        .chunk_by(|a, b| a.x == b.x && a.y == b.y)
-        .map(|tiledups| {
-            tiledups
-                .to_owned()
-                .into_iter()
-                .reduce(|acc, t| combine_tile::<C>(acc, t))
-        })
+        .map(|x| ship_data.sog.b_tree_index.range((mmsi, x.0)..=(mmsi, x.1)))
+        .map(|x| x.into_iter().map(|x| ship_data.sog.sog[*x.1]))
         .flatten()
-        .collect()
-}
+        .fold(None::<(f32, f32)>, |acc, x| match acc {
+            Some((min, max)) => Some((min.min(x), max.max(x))),
+            None => Some((x, x)),
+        })
+        .unzip();
 
-pub fn combine_tile<const C: u64>(a: Tile, b: Tile) -> Tile {
+    let draught = timestamps
+        .into_iter()
+        .map(|x| ship_data.ship_draught.search_range_by_time(mmsi, x.0, x.1))
+        .flatten()
+        .map(|x| ship_data.ship_draught.draught[x])
+        .reduce(|acc, x| acc.max(x));
+
+    let (width, length) = ship_data.dimensions.search_by_key(mmsi).ok().unzip();
+
+    let cell_oc_time: chrono::TimeDelta = timestamps
+        .into_iter()
+        .fold(chrono::TimeDelta::nanoseconds(0), |acc, (tb, te)| {
+            acc + (*te - *tb)
+        });
+
     Tile {
-        max_draught: cmp::max(a.max_draught, b.max_draught),
-        distinct_ship_count: a.distinct_ship_count + b.distinct_ship_count * C,
-        min_sog: a.min_sog.map_or(b.min_sog, |ams| {
-            b.min_sog.map_or(Some(ams), |bms| Some(ams.min(bms)))
-        }),
-        max_sog: a.max_sog.map_or(b.max_sog, |ams| {
-            b.max_sog.map_or(Some(ams), |bms| Some(ams.max(bms)))
-        }),
-        cell_oc_time: a.cell_oc_time + b.cell_oc_time,
-        min_length: cmp::min(a.min_length, b.min_length),
-        max_length: cmp::max(a.max_length, b.max_length),
-        min_width: cmp::min(a.min_width, b.min_width),
-        max_width: cmp::max(a.max_width, b.max_width),
-        ..a
+        x: point.point.x,
+        y: point.point.y,
+        z: point.z,
+        max_draught: draught,
+        distinct_ship_count: 1,
+        min_sog: minsog,
+        max_sog: maxsog,
+        cell_oc_time: cell_oc_time,
+        min_length: length,
+        max_length: length,
+        min_width: width,
+        max_width: width,
     }
 }
 
+pub fn combine_tiles(tiles: &[Tile]) -> Option<Tile> {
+    tiles
+        .into_iter()
+        .cloned()
+        .reduce(|acc, x| combine_2_tiles(&acc, &x))
+}
+
+pub fn combine_2_tiles(a: &Tile, b: &Tile) -> Tile {
+    Tile {
+        max_draught: a.max_draught.map_or(b.max_draught, |a| {
+            b.max_draught.map_or(Some(a), |b| Some(a.max(b)))
+        }),
+        distinct_ship_count: a.distinct_ship_count + b.distinct_ship_count,
+        min_sog: a.min_sog.map_or(b.min_sog, |a| b.min_sog.map_or(Some(a), |b| Some(a.min(b)))),
+        max_sog: a.max_sog.map_or(b.max_sog, |a| b.max_sog.map_or(Some(a), |b| Some(a.max(b)))),
+        cell_oc_time: a.cell_oc_time + b.cell_oc_time,
+        min_length: a.min_length.map_or(b.min_length, |a| b.min_length.map_or(Some(a), |b| Some(a.min(b)))),
+        max_length: a.max_length.map_or(b.max_length, |a| b.max_length.map_or(Some(a), |b| Some(a.max(b)))),
+        min_width: a.min_width.map_or(b.min_width, |a| b.min_width.map_or(Some(a), |b| Some(a.min(b)))),
+        max_width: a.max_width.map_or(b.max_width, |a| b.max_width.map_or(Some(a), |b| Some(a.max(b)))),
+        ..a.clone()
+    }
+}
 pub fn point_time_duration(
     time_from: DateTime<Utc>,
     time_to: DateTime<Utc>,
@@ -500,85 +369,46 @@ mod tests {
                 max_sog: None,
                 distinct_ship_count: 1,
                 cell_oc_time: chrono::TimeDelta::seconds(5),
-                min_length: Some(5),
-                max_length: Some(5),
+                min_length: Some(5.0),
+                max_length: Some(5.0),
                 min_width: None,
-                max_width: Some(2),
+                max_width: Some(2.0),
             },
             Tile {
                 x: 0,
                 y: 0,
                 z: 10,
-                max_draught: Some(6),
+                max_draught: Some(6.0),
                 min_sog: Some(2.0),
                 max_sog: Some(2.0),
                 distinct_ship_count: 1,
                 cell_oc_time: chrono::TimeDelta::seconds(5),
-                min_length: Some(2),
-                max_length: Some(2),
+                min_length: Some(2.0),
+                max_length: Some(2.0),
                 min_width: None,
-                max_width: Some(4),
+                max_width: Some(4.0),
             },
         ];
 
-        let result = combine_tiles::<SINGLE_VESSEL>(tiles);
+        let result = combine_tiles(&tiles);
 
-        assert_eq!(result.len(), 1);
         assert_eq!(
-            result[0],
+            result.unwrap(),
             Tile {
                 x: 0,
                 y: 0,
                 z: 10,
-                max_draught: Some(6),
+                max_draught: Some(6.),
                 min_sog: Some(1.0),
                 max_sog: Some(2.0),
-                distinct_ship_count: 1,
+                distinct_ship_count: 2,
                 cell_oc_time: chrono::TimeDelta::seconds(10),
-                min_length: Some(2),
-                max_length: Some(5),
+                min_length: Some(2.),
+                max_length: Some(5.),
                 min_width: None,
-                max_width: Some(4)
+                max_width: Some(4.)
             }
         );
-    }
-
-    #[test]
-    fn combine_tiles_diff_coord() {
-        let tiles = vec![
-            Tile {
-                x: 0,
-                y: 0,
-                z: 10,
-                max_draught: None,
-                min_sog: Some(1.0),
-                max_sog: None,
-                distinct_ship_count: 1,
-                cell_oc_time: chrono::TimeDelta::seconds(5),
-                min_length: Some(5),
-                max_length: Some(5),
-                min_width: None,
-                max_width: Some(2),
-            },
-            Tile {
-                x: 1,
-                y: 0,
-                z: 10,
-                max_draught: Some(6),
-                min_sog: Some(2.0),
-                max_sog: Some(2.0),
-                distinct_ship_count: 1,
-                cell_oc_time: chrono::TimeDelta::seconds(5),
-                min_length: Some(2),
-                max_length: Some(2),
-                min_width: None,
-                max_width: Some(4),
-            },
-        ];
-
-        let result = combine_tiles::<SINGLE_VESSEL>(tiles);
-
-        assert_eq!(result.len(), 2);
     }
 
     #[test]
@@ -593,45 +423,44 @@ mod tests {
                 max_sog: None,
                 distinct_ship_count: 1,
                 cell_oc_time: chrono::TimeDelta::seconds(5),
-                min_length: Some(5),
-                max_length: Some(5),
+                min_length: Some(5.),
+                max_length: Some(5.),
                 min_width: None,
-                max_width: Some(2),
+                max_width: Some(2.),
             },
             Tile {
                 x: 0,
                 y: 0,
                 z: 10,
-                max_draught: Some(6),
+                max_draught: Some(6.),
                 min_sog: Some(2.0),
                 max_sog: Some(2.0),
                 distinct_ship_count: 1,
                 cell_oc_time: chrono::TimeDelta::seconds(5),
-                min_length: Some(2),
-                max_length: Some(2),
+                min_length: Some(2.),
+                max_length: Some(2.),
                 min_width: None,
-                max_width: Some(4),
+                max_width: Some(4.),
             },
         ];
 
-        let result = combine_tiles::<MULTI_VESSEL>(tiles);
+        let result = combine_tiles(&tiles);
 
-        assert_eq!(result.len(), 1);
         assert_eq!(
-            result[0],
+            result.unwrap(),
             Tile {
                 x: 0,
                 y: 0,
                 z: 10,
-                max_draught: Some(6),
+                max_draught: Some(6.),
                 min_sog: Some(1.0),
                 max_sog: Some(2.0),
                 distinct_ship_count: 2,
                 cell_oc_time: chrono::TimeDelta::seconds(10),
-                min_length: Some(2),
-                max_length: Some(5),
+                min_length: Some(2.),
+                max_length: Some(5.),
                 min_width: None,
-                max_width: Some(4)
+                max_width: Some(4.)
             }
         );
     }
@@ -696,7 +525,7 @@ mod tests {
             ],
         };
 
-        let result = points1.combine(points2);
+        let result = combine_point_with_time(&[points1, points2]).unwrap();
 
         assert_eq!(comb, result)
     }
@@ -728,8 +557,15 @@ mod tests {
 
         let ls = LineStringM::new(coords).unwrap();
 
-        let points = draw_linestring2(ls.clone(), 0, 22);
+        let mut points = draw_linestring(ls.clone(), 8, 22);
 
-        assert_eq!(points[0].time_stamps.len(), 1);
+        points.sort_by_cached_key(|a| a.point);
+
+        let result: Vec<PointWTime> = points.chunk_by(|a, b| a.point == b.point).map(|x| combine_point_with_time(x)).flatten().collect();
+
+
+
+        assert_eq!(result.len(), 9);
     }
 }
+
