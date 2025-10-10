@@ -28,7 +28,7 @@ fn main() {
 
     // dbg!(cartesian.len());
     let mut conn = DbConn::new().expect("failed to establish database connection");
-    let func = |f, l| dist(f, l, 1000_f64) || time_dist(f, l, 60_f64);
+    let func = |f, l| dist(f, l, 1000_f64) && time_dist(f, l, 60_f64);
     let it =
         TrajectoryIter::<500>::new(DbConn::new().expect("failed to establish database connection"))
             .expect("failed to create select iterator");
