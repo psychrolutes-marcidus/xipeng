@@ -1,8 +1,3 @@
-use std::ops::Sub;
-
-use geo::coord;
-use geo_traits::{CoordTrait, GeometryTrait, LineTrait};
-
 use crate::types::linestringm::LineStringM;
 use crate::types::multilinestringm::MultiLineStringM;
 use crate::types::pointm::PointM;
@@ -73,56 +68,18 @@ where
     output.into()
 }
 
-
-pub fn line_to_aabb_triangles<Line:LineTrait + std::fmt::Debug>(line: &Line, a: f64, b: f64, c: f64, d: f64) -> Vec<geo_types::Triangle> 
-where 
-    Line: GeometryTrait<T = f64>
-{
-    let dx = line.end().x() - line.start().x();
-    let dy = line.end().y() - line.start().y();
-    let dnorm = f64::sqrt(dx*dx+dy*dy);
-    let ndx = dx/dnorm;
-    let ndy = dy/dnorm;
-    let vec_orth_c = vec![-ndy*c, ndx*c]; // vec_orth_c/d project their length orthogonally along the normal vector of the line by the given lengths c,d respectively
-    let vec_orth_d = vec![ndy*d, -ndx*d];
-    let c_coord = coord![x: line.start().x()+vec_orth_c.first().unwrap(), y: line.start().y()+vec_orth_c.last().unwrap()]; // coordinate of left (port) of line AABB from line start
-    let d_coord = coord![x: line.start().x()+vec_orth_d.first().unwrap(), y: line.start().y()+vec_orth_d.last().unwrap()]; // coordinate of right (startboard) of line AABB from line start
-    let c_coord_end = coord![x: line.end().x()+vec_orth_c.first().unwrap(), y: line.end().y()+vec_orth_c.last().unwrap()]; // --||-- line end
-    let d_coord_end = coord![x: line.end().x()+vec_orth_d.first().unwrap(), y: line.end().y()+vec_orth_d.last().unwrap()]; // --||-- line end
-
-    vec![
-        geo_types::geometry::Triangle::new(c_coord, d_coord, c_coord_end),
-        geo_types::geometry::Triangle::new(d_coord, c_coord_end, d_coord_end)
-    ]
-}
-
 #[cfg(test)]
 mod tests {
     use std::fs;
 
     use super::*;
     use crate::types::coordm::CoordM;
-    use crate::types::linem::LineM;
     use crate::types::multilinestringm::MultiLineStringM;
-    use geo::{coord, Distance, Line};
+    use geo::Distance;
     use hex::encode;
     use pretty_assertions::{assert_eq, assert_ne};
     use wkb::reader::read_wkb;
     use wkb::writer::WriteOptions;
-
-    #[test]
-    fn dumb_test() {
-        let line = Line::new(coord! { x: 0., y: 0. }, coord! { x: 5., y: 0. });
-        /*let coords: Vec<CoordM<4326>> = [(1.0, 2.0, 0.0), (5.0, 3.0, 1.0), (3.0, 4.0, 2.0)]
-            .map(|f| f.into())
-            .to_vec();
-        let first_line = LineM::from((coords[0],coords[1]));
-        */
-
-        let a = line_to_aabb_triangles(&line, 1.0,1.0,5.0,1.0);
-        dbg!(a);
-    }
-
     #[test]
     fn no_segment() {
         let coords: Vec<CoordM<4326>> = [(1.0, 2.0, 0.0), (2.0, 3.0, 1.0), (3.0, 4.0, 2.0)]

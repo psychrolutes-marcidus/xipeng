@@ -1,0 +1,12 @@
+[package]
+name = "modeling"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+geo = "0.31.0"
+geo-traits = "0.3.0"
+geo-types = "0.7.17"
+
+[lints]
+workspace = true
