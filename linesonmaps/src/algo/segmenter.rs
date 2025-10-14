@@ -111,6 +111,12 @@ where
         }
         _ => true,
     }));
+    debug_assert!(splits.iter().all(|p| match p {
+        TrajectorySplit::SubTrajectory(sls) => {
+            sls.lines().all(|p| func(p.from, p.to))
+        }
+        _ => true,
+    }));
 
     #[cfg(debug_assertions)]
     {
@@ -300,8 +306,141 @@ mod tests {
             .max_by(f64::total_cmp)
             .unwrap();
 
-        assert!(false,"{max_dist}");
-        assert!(max_dist<=1000.0,"max distance is greater than maxium distance of 1000 threshold \t max_dist = {max_dist}");
+        assert!(false, "{max_dist}");
+        assert!(
+            max_dist <= 1000.0,
+            "max distance is greater than maxium distance of 1000 threshold \t max_dist = {max_dist}"
+        );
+    }
 
+    #[test]
+    fn buggy_traj() {
+        let HEXSTRING: &str = include_str!("./resources/219013708.txt");
+        let HEXSTRING = HEXSTRING.replace("\"", "");
+        let bytea = hex::decode(HEXSTRING).unwrap();
+        let wkb = read_wkb(&bytea).unwrap();
+        let lsm = LineStringM::<4326>::try_from(wkb).unwrap();
+        let lsm = LineStringM::new(lsm.0).unwrap();
+        let mut lsm_s = lsm.clone();
+
+        let func = |f: PointM, s: PointM| {
+            geo::algorithm::line_measures::metric_spaces::Geodesic.distance(f, s) <= 1000.
+                && s.coord.m - f.coord.m <= 60.
+        };
+
+        let splits = segmenter(lsm, func);
+
+        let max_dist = splits
+            .into_iter()
+            .map(|s| match s {
+                TrajectorySplit::Point(p) => 0_f64,
+                TrajectorySplit::SubTrajectory(ls) => ls
+                    .lines()
+                    .map(|l| Geodesic.distance(l.to, l.from))
+                    .max_by(f64::total_cmp)
+                    .unwrap(),
+            })
+            .max_by(f64::total_cmp)
+            .unwrap();
+        assert!(false, "{max_dist}");
+    }
+
+    #[test]
+    fn buggy_traj_bad_part() {
+        const HEXSTRING: &str = include_str!("./resources/219013708_bad_part.txt");
+        let split = HEXSTRING.lines().collect::<Vec<_>>();
+        let mut mlsm = vec![];
+        for s in split {
+            let bytea = hex::decode(s.trim()).unwrap();
+            let wkb = read_wkb(&bytea).unwrap();
+            let lsm = LineStringM::<4326>::try_from(wkb).unwrap();
+            let lsm = LineStringM::new(lsm.0).unwrap();
+            let mut lsm_s = lsm.clone();
+            mlsm.push(lsm);
+        }
+        let lsm = LineStringM(mlsm.iter().map(|f| f.0.clone()).flatten().collect::<Vec<_>>());
+        let lsm_s = lsm.clone();
+        let func = |f: PointM, s: PointM| {
+            geo::algorithm::line_measures::metric_spaces::Geodesic.distance(f, s) <= 1000.
+                && s.coord.m - f.coord.m <= 60.
+        };
+
+        let splits = segment_timestamp(lsm, func);
+        let a = splits
+            .into_iter()
+            .map(|(tz, i)| {
+                LineStringM(
+                    lsm_s
+                        .points()
+                        .filter(move |p| {
+                            let t = DateTime::<Utc>::from_timestamp_secs(p.coord.m as i64).unwrap();
+                            t >= tz && t < tz + i
+                        })
+                        .map(|p| p.coord)
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        let max_dist = a
+            .into_iter()
+            .map(|ls| {
+                ls.lines()
+                    .map(|l| Geodesic.distance(l.to, l.from))
+                    .max_by(f64::total_cmp)
+                    .unwrap()
+            })
+            .max_by(f64::total_cmp)
+            .unwrap();
+        assert!(false, "{max_dist}");
+    }
+    #[test]
+    fn buggy_traj_bad_part_2() {
+        const HEXSTRING: &str = include_str!("./resources/245543000.txt");
+        let split = HEXSTRING.lines().collect::<Vec<_>>();
+        let mut mlsm = vec![];
+        for s in split {
+            let bytea = hex::decode(s.trim()).unwrap();
+            let wkb = read_wkb(&bytea).unwrap();
+            let lsm = LineStringM::<4326>::try_from(wkb).unwrap();
+            // let lsm = LineStringM::new(lsm.0).unwrap();
+            let mut lsm_s = lsm.clone();
+            mlsm.push(lsm);
+        }
+        let lsm = LineStringM(mlsm.iter().map(|f| f.0.clone()).flatten().collect::<Vec<_>>());
+        let lsm_s = lsm.clone();
+        let func = |f: PointM, s: PointM| {
+            geo::algorithm::line_measures::metric_spaces::Geodesic.distance(f, s) <= 1000.
+                && s.coord.m - f.coord.m <= 60.
+        };
+
+        let splits = segment_timestamp(lsm, func);
+        let a = splits
+            .into_iter()
+            .map(|(tz, i)| {
+                LineStringM(
+                    lsm_s
+                        .points()
+                        .filter(move |p| {
+                            let t = DateTime::<Utc>::from_timestamp_secs(p.coord.m as i64).unwrap();
+                            t >= tz && t < tz + i
+                        })
+                        .map(|p| p.coord)
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        let max_dist = a
+            .into_iter()
+            .map(|ls| {
+                ls.lines()
+                    .map(|l| Geodesic.distance(l.to, l.from))
+                    .max_by(f64::total_cmp)
+                    .unwrap_or(0.0)
+            })
+            .max_by(f64::total_cmp)
+            .unwrap();
+        assert!(false, "{max_dist}");
     }
 }
