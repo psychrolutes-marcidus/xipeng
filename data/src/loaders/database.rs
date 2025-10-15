@@ -650,6 +650,7 @@ mod tests {
     #[test]
     #[ignore = "pending deprecation, but it still works, probably :))"]
     fn split_traj_insertion_works() {
+        dotenvy::dotenv().unwrap();
         let mut db = DbConn::new().unwrap();
 
         let ts = TrajectorySplit::<4326>::Point(PointM::from((1., 2., 3.5)));
@@ -666,6 +667,7 @@ mod tests {
     }
     #[test]
     fn split_traj_intervals_works() {
+        dotenvy::dotenv().unwrap();
         let mut db = DbConn::new().unwrap();
         let split_intevals = vec![(
             123456789,
