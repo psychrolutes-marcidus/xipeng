@@ -1,17 +1,17 @@
-use chrono::DateTime;
 use data::loaders::database::DbConn;
 use data::loaders::database::TrajectoryIter;
 use data::loaders::database::insert_sub_traj_inteval;
 use dotenvy::dotenv;
 use geo::Distance;
 use itertools::{self, Itertools};
-use linesonmaps::algo::segmenter::{TrajectorySplit, segment_timestamp, segmenter};
+use linesonmaps::algo::segmenter::segment_timestamp;
 use linesonmaps::types::linestringm::LineStringM;
 use linesonmaps::types::pointm::PointM;
-use rayon::prelude::*;
 
+#[allow(unused)]
 type LineString = LineStringM<4326>;
 #[allow(clippy::upper_case_acronyms)]
+#[allow(unused)]
 type MMSI = i32;
 
 // dist threshold init 50m, step-size: ¿50m?
@@ -35,19 +35,17 @@ fn main() {
 
     let _ = it
         .map(|ts| {
-            let commit_res = ts.map(|t| {
+            ts.map(|t| {
                 let z = t
                     .mmsi
                     .into_iter()
                     .zip_eq(t.trajectory)
                     .map(|(mmsi, traj)| (mmsi, segment_timestamp(traj, func)))
                     .collect_vec();
-                let t = insert_sub_traj_inteval(&mut conn.conn, z)
+                insert_sub_traj_inteval(&mut conn.conn, z)
                     .expect("database error")
-                    .commit();
-                t
-            });
-            commit_res
+                    .commit()
+            })
         })
         .flatten_ok()
         .collect::<Result<Vec<_>, _>>()

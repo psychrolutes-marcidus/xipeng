@@ -88,6 +88,7 @@ fn main() {
     println!("output experiment results to {0}", p);
 }
 
+#[allow(unused)]
 const fn time_dist(first: PointM, second: PointM, thres: f64) -> bool {
     second.coord.m - first.coord.m < thres
 }

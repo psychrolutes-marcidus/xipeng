@@ -573,8 +573,7 @@ impl<const CHUNK_SIZE: u32> Iterator for TrajectoryIter<CHUNK_SIZE> {
             });
         let o_result = result
             .map(|v| {
-                let res = v
-                    .into_iter()
+                v.into_iter()
                     .map(|r| {
                         Ok::<(i32, LineStringM<4326>), DatabaseError>((
                             r.get::<'_, _, i32>("mmsi"),
@@ -583,13 +582,12 @@ impl<const CHUNK_SIZE: u32> Iterator for TrajectoryIter<CHUNK_SIZE> {
                             )?)?,
                         ))
                     })
-                    .collect::<Result<Vec<_>, _>>();
-                res
+                    .collect::<Result<Vec<_>, _>>()
             })
             .flatten()
             .map(|v| {
                 let uz = v.into_iter().unzip::<i32, LineStringM, Vec<_>, Vec<_>>();
-                if uz.0.len() > 0 {
+                if !uz.0.is_empty() {
                     Some(Trajectories {
                         mmsi: uz.0,
                         trajectory: uz.1,
