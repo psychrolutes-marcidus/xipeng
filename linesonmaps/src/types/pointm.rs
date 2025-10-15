@@ -206,10 +206,10 @@ mod tests {
         )
         .unwrap();
 
-    let bytes = 2001_u32.to_le_bytes();
-    // dbg!(hex::encode(2001_u32.to_le_bytes().as_slice()));
-    // assert!(false);
-    assert_eq!(bytes.as_slice(),&w[1..=4]);
-    // assert_eq!(2001_u32,u32::from_le_bytes(w[1..=4]));
+        let bytes = 2001_u32.to_le_bytes();
+        // dbg!(hex::encode(2001_u32.to_le_bytes().as_slice()));
+        // assert!(false);
+        assert_eq!(bytes.as_slice(), &w[1..=4]);
+        // assert_eq!(2001_u32,u32::from_le_bytes(w[1..=4]));
     }
 }
