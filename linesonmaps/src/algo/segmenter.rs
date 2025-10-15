@@ -306,7 +306,7 @@ mod tests {
             .max_by(f64::total_cmp)
             .unwrap();
 
-        assert!(false, "{max_dist}");
+        // assert!(false, "{max_dist}");
         assert!(
             max_dist <= 1000.0,
             "max distance is greater than maxium distance of 1000 threshold \t max_dist = {max_dist}"
@@ -328,10 +328,10 @@ mod tests {
                 && s.coord.m - f.coord.m <= 60.
         };
 
-        let splits = segmenter(lsm, func);
+        let splits = segmenter(lsm, func); // correctness by construction
 
         let max_dist = splits
-            .into_iter()
+            .iter()
             .map(|s| match s {
                 TrajectorySplit::Point(p) => 0_f64,
                 TrajectorySplit::SubTrajectory(ls) => ls
@@ -342,7 +342,35 @@ mod tests {
             })
             .max_by(f64::total_cmp)
             .unwrap();
-        assert!(false, "{max_dist}");
+
+        let f = splits.iter().filter(|p| match p {
+            TrajectorySplit::Point(p) => (1704442450_f64..1704445036_f64).contains(&p.coord.m),
+            TrajectorySplit::SubTrajectory(ls) => {
+                let lsm_r = (ls.0.first().unwrap().m..ls.0.last().unwrap().m);
+                lsm_r.contains(&1704442450_f64) || lsm_r.contains(&1704445036_f64)
+            }
+        });
+        let a = f.clone().collect::<Vec<_>>();
+        dbg!(
+            a.iter()
+                .filter(|c| match c {
+                    TrajectorySplit::Point(p) => {
+                        p.coord.y < 20.
+                    }
+                    TrajectorySplit::SubTrajectory(ls) => {
+                        ls.points().any(|p| p.coord.y < 20.)
+                    }
+                })
+                .collect::<Vec<_>>()
+        );
+        dbg!(
+            lsm_s
+                .0
+                .windows(2)
+                .map(|ts| Geodesic.distance(PointM::from(ts[0]), PointM::from(ts[1])))
+                .max_by(f64::total_cmp)
+        )
+        .unwrap();
     }
 
     #[test]
@@ -358,7 +386,12 @@ mod tests {
             let mut lsm_s = lsm.clone();
             mlsm.push(lsm);
         }
-        let lsm = LineStringM(mlsm.iter().map(|f| f.0.clone()).flatten().collect::<Vec<_>>());
+        let lsm = LineStringM(
+            mlsm.iter()
+                .map(|f| f.0.clone())
+                .flatten()
+                .collect::<Vec<_>>(),
+        );
         let lsm_s = lsm.clone();
         let func = |f: PointM, s: PointM| {
             geo::algorithm::line_measures::metric_spaces::Geodesic.distance(f, s) <= 1000.
@@ -367,7 +400,8 @@ mod tests {
 
         let splits = segment_timestamp(lsm, func);
         let a = splits
-            .into_iter()
+            .iter()
+            .cloned()
             .map(|(tz, i)| {
                 LineStringM(
                     lsm_s
@@ -392,7 +426,14 @@ mod tests {
             })
             .max_by(f64::total_cmp)
             .unwrap();
-        assert!(false, "{max_dist}");
+
+        dbg!(
+            splits
+                .iter()
+                .map(|(tz, i)| (tz.to_rfc3339(), (*tz + *i).to_rfc3339()))
+                .collect::<Vec<_>>()
+        );
+        assert!(max_dist<1000.0, "{max_dist}");
     }
     #[test]
     fn buggy_traj_bad_part_2() {
@@ -407,7 +448,12 @@ mod tests {
             let mut lsm_s = lsm.clone();
             mlsm.push(lsm);
         }
-        let lsm = LineStringM(mlsm.iter().map(|f| f.0.clone()).flatten().collect::<Vec<_>>());
+        let lsm = LineStringM(
+            mlsm.iter()
+                .map(|f| f.0.clone())
+                .flatten()
+                .collect::<Vec<_>>(),
+        );
         let lsm_s = lsm.clone();
         let func = |f: PointM, s: PointM| {
             geo::algorithm::line_measures::metric_spaces::Geodesic.distance(f, s) <= 1000.
@@ -416,7 +462,8 @@ mod tests {
 
         let splits = segment_timestamp(lsm, func);
         let a = splits
-            .into_iter()
+            .iter()
+            .cloned()
             .map(|(tz, i)| {
                 LineStringM(
                     lsm_s
@@ -441,6 +488,7 @@ mod tests {
             })
             .max_by(f64::total_cmp)
             .unwrap();
-        assert!(false, "{max_dist}");
+
+        assert!(max_dist<1000.0, "{max_dist}");
     }
 }
