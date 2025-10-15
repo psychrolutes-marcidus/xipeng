@@ -114,7 +114,7 @@ pub fn draw_linestring(
         .map(|x| x.change_zoom(zoom_level))
         .collect();
 
-        point_ext
+    point_ext
 }
 
 pub fn combine_point_with_time(points: &[PointWTime]) -> Option<PointWTime> {
@@ -210,7 +210,9 @@ pub fn points_to_tiles(mut points: Vec<PointWTime>, mmsi: i32, ship_data: Arc<Sh
     let combined = points
         .chunk_by(|a, b| a.point == b.point)
         .map(|x| combine_point_with_time(x))
-        .flatten().map(|p| point_to_tile(&p, mmsi, &ship_data)).collect();
+        .flatten()
+        .map(|p| point_to_tile(&p, mmsi, &ship_data))
+        .collect();
 
     combined
 }
@@ -273,13 +275,25 @@ pub fn combine_2_tiles(a: &Tile, b: &Tile) -> Tile {
             b.max_draught.map_or(Some(a), |b| Some(a.max(b)))
         }),
         distinct_ship_count: a.distinct_ship_count + b.distinct_ship_count,
-        min_sog: a.min_sog.map_or(b.min_sog, |a| b.min_sog.map_or(Some(a), |b| Some(a.min(b)))),
-        max_sog: a.max_sog.map_or(b.max_sog, |a| b.max_sog.map_or(Some(a), |b| Some(a.max(b)))),
+        min_sog: a
+            .min_sog
+            .map_or(b.min_sog, |a| b.min_sog.map_or(Some(a), |b| Some(a.min(b)))),
+        max_sog: a
+            .max_sog
+            .map_or(b.max_sog, |a| b.max_sog.map_or(Some(a), |b| Some(a.max(b)))),
         cell_oc_time: a.cell_oc_time + b.cell_oc_time,
-        min_length: a.min_length.map_or(b.min_length, |a| b.min_length.map_or(Some(a), |b| Some(a.min(b)))),
-        max_length: a.max_length.map_or(b.max_length, |a| b.max_length.map_or(Some(a), |b| Some(a.max(b)))),
-        min_width: a.min_width.map_or(b.min_width, |a| b.min_width.map_or(Some(a), |b| Some(a.min(b)))),
-        max_width: a.max_width.map_or(b.max_width, |a| b.max_width.map_or(Some(a), |b| Some(a.max(b)))),
+        min_length: a.min_length.map_or(b.min_length, |a| {
+            b.min_length.map_or(Some(a), |b| Some(a.min(b)))
+        }),
+        max_length: a.max_length.map_or(b.max_length, |a| {
+            b.max_length.map_or(Some(a), |b| Some(a.max(b)))
+        }),
+        min_width: a.min_width.map_or(b.min_width, |a| {
+            b.min_width.map_or(Some(a), |b| Some(a.min(b)))
+        }),
+        max_width: a.max_width.map_or(b.max_width, |a| {
+            b.max_width.map_or(Some(a), |b| Some(a.max(b)))
+        }),
         ..a.clone()
     }
 }
@@ -561,11 +575,12 @@ mod tests {
 
         points.sort_by_cached_key(|a| a.point);
 
-        let result: Vec<PointWTime> = points.chunk_by(|a, b| a.point == b.point).map(|x| combine_point_with_time(x)).flatten().collect();
-
-
+        let result: Vec<PointWTime> = points
+            .chunk_by(|a, b| a.point == b.point)
+            .map(|x| combine_point_with_time(x))
+            .flatten()
+            .collect();
 
         assert_eq!(result.len(), 9);
     }
 }
-
