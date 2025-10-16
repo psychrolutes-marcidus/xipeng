@@ -7,6 +7,7 @@ pub fn add(left: u64, right: u64) -> u64 {
 #[cfg(test)]
 mod tests {
     use geo::{coord, Distance, Line};
+    use linesonmaps::types::{coordm::CoordM, linem::LineM};
     use crate::modeling::line_to_aabb_triangles;
 
     use super::*;
@@ -20,7 +21,13 @@ mod tests {
         let first_line = LineM::from((coords[0],coords[1]));
         */
 
-        let a = line_to_aabb_triangles(&line, 1.0,1.0,10000000.0,10000000.0);
+        let coords: Vec<CoordM<4326>> = [(8.0, 56.0, 0.0), (8.2, 56.2, 3600.0)]            
+            .map(|f| f.into())
+            .to_vec();
+        let line_m = LineM::<4326>::from((coords[0], coords[1]));
+        line_m.from.coord.m;
+
+        let a = line_to_aabb_triangles(&line_m, 150.0,150.0,100.0,100.0);
         dbg!(a);
     }
 
