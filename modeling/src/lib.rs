@@ -21,14 +21,16 @@ mod tests {
         let first_line = LineM::from((coords[0],coords[1]));
         */
 
-        let coords: Vec<CoordM<4326>> = [(8.0, 56.0, 0.0), (8.2, 56.2, 3600.0)]            
+        let coords: Vec<CoordM<4326>> = [(8.0, 56.0, 0.0), (8.2, 56.0, 3600.0)]            
             .map(|f| f.into())
             .to_vec();
         let line_m = LineM::<4326>::from((coords[0], coords[1]));
         line_m.from.coord.m;
 
-        let a = line_to_aabb_triangles(&line_m, 150.0,150.0,100.0,100.0);
-        dbg!(a);
+        let a = line_to_aabb_triangles(&line_m, 150.0,150.0,100.0,0.0);
+        dbg!(a.0, a.1);
+        dbg!(a.2(a.1,0.,1.,0.));
+        dbg!(a.3());
     }
 
     #[test]
