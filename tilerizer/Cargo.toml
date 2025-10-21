@@ -9,6 +9,7 @@ itertools = "0.14.0"
 linesonmaps = { workspace = true }
 data = { workspace = true }
 chrono = { workspace = true }
+geo-types = { workspace = true }
 
 [lints]
 workspace = true

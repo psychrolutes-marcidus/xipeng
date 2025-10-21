@@ -1,8 +1,11 @@
 use chrono::prelude::*;
 use data::tables::Ships;
+use geo_types::Coord;
 use itertools::Itertools;
 use linesonmaps::types::{coordm::CoordM, linestringm::LineStringM};
 use std::{cmp, sync::Arc};
+
+pub mod tile3d;
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 pub struct Point {
@@ -104,7 +107,7 @@ pub fn draw_linestring(
         .points()
         .map(|p| {
             (
-                point_to_grid(p.coord, sampling_zoom_level),
+                point_to_grid((p.coord.x, p.coord.y).into(), sampling_zoom_level),
                 DateTime::from_timestamp_secs(p.coord.m as i64).unwrap(),
             )
         })
@@ -191,7 +194,7 @@ pub fn enhance_point(
         .collect()
 }
 
-pub fn point_to_grid(point: CoordM<4326>, sampling_zoom_level: i32) -> Point {
+pub fn point_to_grid(point: Coord<f64>, sampling_zoom_level: i32) -> Point {
     use std::f64::consts::*;
 
     let x =
@@ -482,10 +485,9 @@ mod tests {
     #[test]
     fn coord_to_point() {
         let cass_point = Point { x: 34586, y: 20073 }; // At zoom 16
-        let cass_4326_coord = CoordM::<4326> {
+        let cass_4326_coord = Coord::<f64> {
             x: 9.99083572,
             y: 57.01233944,
-            m: 69.0,
         };
 
         let result = point_to_grid(cass_4326_coord, 16);
