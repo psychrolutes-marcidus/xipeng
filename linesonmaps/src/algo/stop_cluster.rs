@@ -54,45 +54,8 @@ impl<Dist, const CRS: u64> DbScanConf<Dist, CRS>
 where
     Dist: Fn(&PointM<CRS>, &PointM<CRS>) -> f64,
 {
-    // pub fn run<'p>(&self, points: &'p [PointM], dist_thres: f64) -> Vec<()> {
-    //     let mut cluster_label = 0_u64;
-    //     let mut labels: HashMap<usize, Option<u64>> = HashMap::with_capacity(points.len());
-    //     let mut classes: Vec<Classification> = Vec::with_capacity(points.len());
-
-    //     for (idx, ele) in points.iter().enumerate() {
-    //         if !labels.contains_key(&idx) {
-    //             //unprocessed
-    //             let mut neighbors = self.range_query(ele, &points, dist_thres); //TODO: potentially expensive
-
-    //             if (neighbors.len() as u64) < self.min_cluster_size.get() {
-    //                 classes.push(Classification::Unclassified(ele));
-    //                 labels.entry(idx).insert_entry(None);
-    //             }
-
-    //             cluster_label += 1;
-    //             labels.entry(idx).insert_entry(Some(cluster_label));
-
-    //             for (nidx, nele) in neighbors {
-    //                 let _ = labels
-    //                     .entry(nidx)
-    //                     .and_modify(|v| *v = Some(v.unwrap_or(cluster_label)))
-    //                     .or_insert(Some(cluster_label)); //wikipedia pseudocode is confusing
-
-    //                 if !labels.contains_key(&nidx) {
-    //                     let n_neighbors = self.range_query(nele, &points, dist_thres);
-
-    //                     if (n_neighbors.len() as u64) >= self.min_cluster_size.get() {
-    //                         // neighbors.push((0,nele))// TODO: finish
-    //                     }
-    //                 }
-    //             }
-    //         }
-    //     }
-
-    //     todo!()
-    // }
     #[deprecated]
-    pub fn run_new<'p>(
+    fn run_new<'p>(
         &self,
         points: &'p [PointM<CRS>],
         dist_thres: f64,
@@ -270,8 +233,8 @@ where
         new_cluster
     }
 
-    pub fn runnnn<'p>(
-        mut self,
+    pub fn run<'p>(
+        &mut self,
         points: &'p [(PointM<CRS>, f32)],
     ) -> Vec<(&'p PointM<CRS>, Classification)> {
         use Classification::{Core, Edge, Noise, Unclassified};
@@ -292,8 +255,11 @@ where
             }
         }
 
-        let res: Vec<(&'p PointM<CRS>, Classification)> =
-            points.iter().map(|(p, _)| p).zip(self.classes).collect();
+        let res: Vec<(&'p PointM<CRS>, Classification)> = points
+            .iter()
+            .map(|(p, _)| p)
+            .zip(std::mem::take(&mut self.classes))
+            .collect();
 
         // #[cfg(debug_assertions)]
         // {
@@ -316,6 +282,7 @@ where
         // todo!()
     }
 
+    #[deprecated]
     fn range_query_hash<'p>(
         &self,
         qp: &PointM<CRS>,
@@ -395,6 +362,7 @@ where
     }
 
     //TODO: maybe range query should be performed with the help of an r-tree, but that necesitates a points table
+    #[deprecated]
     fn range_query<'p>(
         &self,
         qp: &PointM<CRS>,
@@ -422,6 +390,7 @@ where
 pub mod test {
     use chrono::TimeDelta;
     use geo::{Distance, Euclidean, Geodesic};
+    use itertools::Itertools;
 
     use super::Classification::*;
     use crate::algo::stop_cluster::DbScanConf;
@@ -478,7 +447,7 @@ pub mod test {
 
     #[test]
     fn simple_cluster_fr_fr() {
-        let conf = DbScanConf::builder()
+        let mut conf = DbScanConf::builder()
             // .dist(|a, b| Geodesic.distance(*a, *b))
             .dist(|a, b| ((b.coord.x - b.coord.x).powi(2) + (b.coord.y - a.coord.y).powi(2)).sqrt())
             .max_time_thres(TimeDelta::new(10, 0).unwrap())
@@ -502,9 +471,24 @@ pub mod test {
         .map(|(i, (f, s))| (PointM::<4326>::from((f, s, i as f64 * 1.0)), 1_f32))
         .collect::<Vec<_>>();
 
-        let clusters = conf.runnnn(&inputs);
+        let clusters = conf.run(&inputs);
         dbg!(&clusters);
         assert_eq!(1, clusters.iter().filter(|å| matches!(å.1, Noise)).count());
-        assert!(false); //FIXME: DONT COMPUTE SOGS, TAKE AS INPUT (computed sogs will always be shifted 1 left, errorneously)
+
+        let c = clusters.into_iter().map(|(_, c)| c).collect_vec();
+
+        assert_eq!(
+            c,
+            vec![
+                Edge(0),
+                Core(0),
+                Core(0),
+                Core(0),
+                Core(1),
+                Core(1),
+                Core(1),
+                Noise
+            ]
+        );
     }
 }
