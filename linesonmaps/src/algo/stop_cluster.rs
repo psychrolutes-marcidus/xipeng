@@ -43,7 +43,7 @@ where
     pub(crate) dist: Dist,
     dist_thres: f64,
     /// Maximum Speed Over Ground (SOG) for a point to be clustered
-    pub(crate) speed_thres: f64,
+    pub(crate) speed_thres: f32,
     /// Maximum time interval before any succeeding points are left out of cluster
     pub(crate) max_time_thres: TimeDelta,
     #[builder(setter(skip),default=Vec::new())]
@@ -91,7 +91,7 @@ where
 
     //     todo!()
     // }
-
+    #[deprecated]
     pub fn run_new<'p>(
         &self,
         points: &'p [PointM<CRS>],
@@ -129,7 +129,7 @@ where
             // let mut expand = HashSet::<usize>::new();
 
             while let Some((q, _)) = neighbors.pop() {
-                let s_neighbors = self.range_query_hash_sog(&points[q], &points, dist_thres);
+                let s_neighbors = self.range_query_hash_sog(&points[q], todo!(), dist_thres);
                 // let s_neighbors = self.range_query(&points[q], &points, dist_thres);
 
                 if s_neighbors.len() < self.min_cluster_size.get() {
@@ -230,14 +230,14 @@ where
     fn expand_custer<'p>(
         &mut self,
         queue: &mut Vec<usize>,
-        points: &'p [PointM<CRS>],
+        points: &'p [(PointM<CRS>, f32)],
         cluster_idx: usize,
         dist_thres: f64,
     ) -> bool {
         use Classification::{Core, Edge, Noise, Unclassified};
         let mut new_cluster = false;
         while let Some(i) = queue.pop() {
-            let neighbors = self.range_query_hash_sog(&points[i], points, dist_thres);
+            let neighbors = self.range_query_hash_sog(&points[i].0, points, dist_thres);
 
             if neighbors.len() < self.min_cluster_size.get() {
                 continue;
@@ -272,7 +272,7 @@ where
 
     pub fn runnnn<'p>(
         mut self,
-        points: &'p [PointM<CRS>],
+        points: &'p [(PointM<CRS>, f32)],
     ) -> Vec<(&'p PointM<CRS>, Classification)> {
         use Classification::{Core, Edge, Noise, Unclassified};
 
@@ -292,7 +292,8 @@ where
             }
         }
 
-        let res: Vec<(&'p PointM<CRS>, Classification)> = points.iter().zip(self.classes).collect();
+        let res: Vec<(&'p PointM<CRS>, Classification)> =
+            points.iter().map(|(p, _)| p).zip(self.classes).collect();
 
         // #[cfg(debug_assertions)]
         // {
@@ -346,7 +347,7 @@ where
     fn range_query_hash_sog<'p>(
         &self,
         qp: &'p PointM<CRS>,
-        points: &'p [PointM<CRS>],
+        points: &'p [(PointM<CRS>, f32)],
         dist_thres: f64,
     ) -> HashSet<usize> {
         // if qp is points[i], and points[n] is not a neighbor, then points[n-1] cannot be as well, same for points[m] and points[m+1] with n<i<m
@@ -354,17 +355,17 @@ where
             .iter()
             .tuple_windows()
             .enumerate()
-            .skip_while(|(_, (f, s))| !self.temporal_and_sog_close(qp, f, s)) // skip early points in
-            .filter(|(_, (f, s))| (self.dist)(qp, f) < dist_thres)
-            .take_while(|(_, (f, s))| self.temporal_and_sog_close(qp, f, s))
+            .skip_while(|(_, (f, s))| !self.temporal_sog_close(qp, &f.0, f.1)) // skip early points in
+            .filter(|(_, (f, s))| (self.dist)(qp, &f.0) < dist_thres)
+            .take_while(|(_, (f, s))| self.temporal_sog_close(qp, &f.0, f.1))
             .map(|(i, _)| i)
             .collect::<HashSet<_>>();
 
         // special case to test if points.last() is a neighbor
         if let Some(s) = points.get(points.len() - 2..=points.len() - 1) {
-            if self.temporal_and_sog_close(qp, &s[0], &s[1])
-                && (self.dist)(qp, &s[1]) < dist_thres
-                && qp != &s[1]
+            if self.temporal_sog_close(qp, &s[0].0, s[0].1)
+                && (self.dist)(qp, &s[1].0) < dist_thres
+                && qp != &s[1].0
             {
                 let _ = neighbors.insert(points.len() - 1);
             }
@@ -372,6 +373,7 @@ where
         neighbors
     }
 
+    #[deprecated]
     fn temporal_and_sog_close(&self, qp: &PointM<CRS>, f: &PointM<CRS>, s: &PointM<CRS>) -> bool {
         let f_dt = DateTime::<Utc>::from_timestamp_secs(f.coord.m as i64).unwrap();
         let qp_dt = DateTime::<Utc>::from_timestamp_secs(qp.coord.m as i64).unwrap();
@@ -379,9 +381,17 @@ where
         let dist = (self.dist)(f, s);
         let delta_m = s.coord.m - f.coord.m;
         let speed_knots = (dist / delta_m) * MS_TO_KNOT;
-        let speed_thres = speed_knots < self.speed_thres;
+        let speed_thres = (speed_knots as f32) < self.speed_thres;
 
         temporally_close && speed_thres
+    }
+
+    fn temporal_sog_close(&self, qp: &PointM<CRS>, f: &PointM<CRS>, sog: f32) -> bool {
+        let f_dt = DateTime::<Utc>::from_timestamp_secs(f.coord.m as i64).unwrap();
+        let qp_dt = DateTime::<Utc>::from_timestamp_secs(qp.coord.m as i64).unwrap();
+        let temporally_close = (f_dt - qp_dt).abs() < self.max_time_thres;
+
+        temporally_close && sog < self.speed_thres
     }
 
     //TODO: maybe range query should be performed with the help of an r-tree, but that necesitates a points table
@@ -477,7 +487,6 @@ pub mod test {
             .dist_thres(1.1)
             .build();
 
-
         let inputs = [
             (1.5, 2.2),
             (1.0, 1.1),
@@ -490,7 +499,7 @@ pub mod test {
         ]
         .into_iter()
         .enumerate()
-        .map(|(i, (f, s))| PointM::<4326>::from((f, s, i as f64 * 1.0)))
+        .map(|(i, (f, s))| (PointM::<4326>::from((f, s, i as f64 * 1.0)), 1_f32))
         .collect::<Vec<_>>();
 
         let clusters = conf.runnnn(&inputs);
