@@ -1,7 +1,7 @@
 use chrono::{DateTime, TimeDelta, Utc};
-use geo::{Distance, Geodesic};
+use geo::Distance;
 use itertools::*;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::num::NonZero;
 use typed_builder::TypedBuilder;
 
@@ -41,6 +41,7 @@ where
     pub(crate) min_cluster_size: NonZero<usize>,
     /// Distance from a [Classification::Edge] Point to a [Classification::Core] Point
     pub(crate) dist: Dist,
+    /// Maximum distance to a [Classification::Core] point
     dist_thres: f64,
     /// Maximum Speed Over Ground (SOG) for a point to be clustered
     pub(crate) speed_thres: f32,
@@ -55,10 +56,10 @@ where
     Dist: Fn(&PointM<CRS>, &PointM<CRS>) -> f64,
 {
     // inpsired by existing DBSCAN implementation https://docs.rs/dbscan/latest/src/dbscan/lib.rs.html#184-205
-    fn expand_custer<'p>(
+    fn expand_custer(
         &mut self,
         queue: &mut Vec<usize>,
-        points: &'p [(PointM<CRS>, f32)],
+        points: &[(PointM<CRS>, f32)],
         cluster_idx: usize,
         dist_thres: f64,
     ) -> bool {
@@ -102,7 +103,7 @@ where
         &mut self,
         points: &'p [(PointM<CRS>, f32)],
     ) -> Vec<(&'p PointM<CRS>, Classification)> {
-        use Classification::{Core, Edge, Noise, Unclassified};
+        use Classification::{Noise, Unclassified};
 
         self.classes = vec![Unclassified; points.len()];
 
@@ -165,14 +166,13 @@ where
             .collect::<HashSet<_>>();
 
         // special case to test if points.last() is a neighbor
-        if let Some(s) = points.get(points.len() - 2..=points.len() - 1) {
-            if self.temporal_sog_close(qp, &s[0].0, s[0].1)
+        if let Some(s) = points.get(points.len() - 2..=points.len() - 1)
+            && self.temporal_sog_close(qp, &s[0].0, s[0].1)
                 && (self.dist)(qp, &s[1].0) < dist_thres
                 && qp != &s[1].0
             {
                 let _ = neighbors.insert(points.len() - 1);
-            }
-        };
+            };
         neighbors
     }
 
