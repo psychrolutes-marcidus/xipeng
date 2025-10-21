@@ -54,141 +54,6 @@ impl<Dist, const CRS: u64> DbScanConf<Dist, CRS>
 where
     Dist: Fn(&PointM<CRS>, &PointM<CRS>) -> f64,
 {
-    #[deprecated]
-    fn run_new<'p>(
-        &self,
-        points: &'p [PointM<CRS>],
-        dist_thres: f64,
-    ) -> Vec<(&'p PointM<CRS>, Classification)> {
-        use self::Classification::{Core, Edge, Noise, Unclassified};
-
-        let mut classes = vec![Unclassified; points.len()];
-        // let mut is_classified
-        let mut curr_cluster = 0;
-        let mut queue: Vec<usize> = Vec::new();
-
-        for i in 0..points.len() {
-            if !matches!(classes[i], Unclassified) {
-                continue; // very imperative
-            }
-
-            // let mut neighbors = self.range_query(&points[i], &points, dist_thres);
-            // let mut neighbors = self.range_query(&points[i], &points, dist_thres);
-            let mut neighbors = vec![(i, &points[i])];
-
-            // if neighbors.len() < self.min_cluster_size.get() {
-            //     classes[i] = Noise;
-            //     continue;
-            // }
-
-            curr_cluster += 1; //TODO: dont increment here
-
-            classes[i] = Edge(curr_cluster); //TODO, Edge?
-            // dbg!((i,curr_cluster,&neighbors));
-            // classes[i] = Noise; //TODO, Edge?
-
-            // let mut visited = HashSet::<usize>::with_capacity(neighbors.len());
-            // let mut seed_set = HashSet::<usize>::from_iter(neighbors.iter().map(|t| t.0)); // range query already excludes query point, no need to exclude
-            // let mut expand = HashSet::<usize>::new();
-
-            while let Some((q, _)) = neighbors.pop() {
-                let s_neighbors = self.range_query_hash_sog(&points[q], todo!(), dist_thres);
-                // let s_neighbors = self.range_query(&points[q], &points, dist_thres);
-
-                if s_neighbors.len() < self.min_cluster_size.get() {
-                    continue;
-                }
-                // new cluster
-                classes[q] = Core(curr_cluster);
-                for ele in s_neighbors {
-                    // map all core neighbors to edge points
-                    if matches!(classes[ele], Noise) {
-                        classes[ele] = Edge(q);
-                    }
-                    if !matches!(classes[ele], Unclassified) {
-                        continue;
-                    } else {
-                        classes[ele] = Noise;
-                        neighbors.push((ele, &points[ele]));
-                    }
-                }
-            }
-
-            // loop {
-            //     for ele in expand.symmetric_difference(&seed_set).copied() {
-            //         if matches!(classes[ele], Noise) {
-            //             classes[ele] = Edge(curr_cluster);
-            //         }
-            //         if matches!(classes[ele], Unclassified) {
-            //             continue;
-            //         }
-            //         classes[i] = Edge(curr_cluster);
-
-            //         let s_neigbors = self.range_query(&points[ele], &points, dist_thres);
-            //         expand = expand
-            //             .union(&HashSet::from_iter(
-            //                 s_neigbors.iter().map(|t| &t.0).copied(),
-            //             ))
-            //             .copied()
-            //             .collect();
-            //         // let mut expand_set = HashSet::<usize>::new();
-            //     }
-            // }
-
-            // for ele in seed_set.iter().copied() {
-            //     if matches!(classes[ele], Noise) {
-            //         classes[ele] = Edge(curr_cluster);
-            //     }
-            //     if matches!(classes[ele], Unclassified) {
-            //         continue;
-            //     }
-            //     classes[i] = Edge(curr_cluster);
-
-            //     let s_neigbors = self.range_query(&points[ele], &points, dist_thres);
-            //     let mut expand_set = HashSet::<usize>::new();
-
-            //     if s_neigbors.len() >= self.min_cluster_size.get() {
-            //         let s_neigh_hash = HashSet::from_iter(s_neigbors.iter().map(|t| t.0));
-            //         expand_set = s_neigh_hash;
-            //     }
-
-            //     for ele in expand_set.difference(&seed_set).copied() {
-
-            //     }
-            // }
-            // visited = visited.union(&seed_set).copied().collect();
-            // for ele in expand_set
-            //     .intersection(&visited)
-            //     .copied()
-            //     .collect::<HashSet<_>>()
-            // {
-            //     if matches!(classes[ele], Noise) {
-            //         classes[ele] = Edge(curr_cluster);
-            //     }
-            //     if matches!(classes[ele], Unclassified) {
-            //         continue;
-            //     }
-
-            //     classes[i] = Edge(curr_cluster);
-
-            //     let s_neigbors = self.range_query(&points[ele], &points, dist_thres);
-
-            //     if s_neigbors.len() >= self.min_cluster_size.get() {
-            //         let s_neigh_hash = HashSet::from_iter(s_neigbors.iter().map(|t| t.0));
-            //         expand_set = s_neigh_hash;
-            //     }
-            // }
-            // visited = visited.union(&expand_set).copied().collect();
-        }
-        // classes
-        //     .iter()
-        //     .enumerate()
-        //     .map(|(idx, c)| (points[idx], c))
-        //     .collect::<Vec<(&PointM, Classification)>>()
-        points.iter().zip(classes).collect()
-        // todo!()
-    }
-
     // inpsired by existing DBSCAN implementation https://docs.rs/dbscan/latest/src/dbscan/lib.rs.html#184-205
     fn expand_custer<'p>(
         &mut self,
@@ -282,35 +147,6 @@ where
         // todo!()
     }
 
-    #[deprecated]
-    fn range_query_hash<'p>(
-        &self,
-        qp: &PointM<CRS>,
-        points: &'p [PointM<CRS>],
-        dist_thres: f64,
-        time_thres: TimeDelta,
-    ) -> HashSet<usize> {
-        //TODO: test behaviour
-        points
-            .iter()
-            .enumerate()
-            .skip_while(|(_, p)| {
-                //TODO: negate
-                (DateTime::<Utc>::from_timestamp_secs(p.coord.m as i64).unwrap()
-                    - DateTime::<Utc>::from_timestamp_secs(qp.coord.m as i64).unwrap())
-                    > time_thres //TODO: speed
-            })
-            .filter(|(_, p)| (self.dist)(qp, p) < dist_thres && qp != *p)
-            .take_while(|(_, p)| {
-                (DateTime::<Utc>::from_timestamp_secs(p.coord.m as i64).unwrap()
-                    - DateTime::<Utc>::from_timestamp_secs(qp.coord.m as i64).unwrap())
-                .abs()
-                    < time_thres
-            })
-            .map(|(i, _)| i)
-            .collect::<HashSet<_>>()
-    }
-
     fn range_query_hash_sog<'p>(
         &self,
         qp: &'p PointM<CRS>,
@@ -338,19 +174,6 @@ where
             }
         };
         neighbors
-    }
-
-    #[deprecated]
-    fn temporal_and_sog_close(&self, qp: &PointM<CRS>, f: &PointM<CRS>, s: &PointM<CRS>) -> bool {
-        let f_dt = DateTime::<Utc>::from_timestamp_secs(f.coord.m as i64).unwrap();
-        let qp_dt = DateTime::<Utc>::from_timestamp_secs(qp.coord.m as i64).unwrap();
-        let temporally_close = (f_dt - qp_dt).abs() < self.max_time_thres;
-        let dist = (self.dist)(f, s);
-        let delta_m = s.coord.m - f.coord.m;
-        let speed_knots = (dist / delta_m) * MS_TO_KNOT;
-        let speed_thres = (speed_knots as f32) < self.speed_thres;
-
-        temporally_close && speed_thres
     }
 
     fn temporal_sog_close(&self, qp: &PointM<CRS>, f: &PointM<CRS>, sog: f32) -> bool {
@@ -409,40 +232,6 @@ pub mod test {
         assert_eq!(conf.min_cluster_size, 42.try_into().unwrap());
         assert_eq!(conf.max_time_thres, TimeDelta::zero());
         assert_eq!(conf.speed_thres, 1.5);
-    }
-
-    #[test]
-    #[ignore = "old implementation"]
-    fn simple_cluster() {
-        let conf = DbScanConf::builder()
-            .dist(|a, b| Geodesic.distance(*a, *b))
-            .max_time_thres(TimeDelta::new(10, 0).unwrap())
-            .min_cluster_size(3.try_into().unwrap())
-            .speed_thres(1.5)
-            .dist_thres(1.0)
-            .build();
-
-        let points = [(0.0, 0.0, 0.0), (0.9, 0.0, 2.0), (0.0, -0.5, 3.0)];
-
-        let inputs = [
-            (1.5, 2.2),
-            (1.0, 1.1),
-            (1.2, 1.4),
-            (0.8, 1.0),
-            (3.7, 4.0),
-            (3.9, 3.9),
-            (3.6, 4.1),
-            (10.0, 100.0),
-        ]
-        .into_iter()
-        .enumerate()
-        .map(|(i, (f, s))| PointM::<4326>::from((f, s, i as f64 * 1.0)))
-        .collect::<Vec<_>>();
-
-        let clusters = conf.run_new(&inputs, 1.0);
-        dbg!(&clusters);
-        assert_eq!(1, clusters.iter().filter(|å| matches!(å.1, Noise)).count());
-        assert!(false);
     }
 
     #[test]
