@@ -1,15 +1,43 @@
-use std::{ops::Div, vec};
+use std::{ops::Div};
 
-use chrono::{Date, DateTime, Duration, TimeDelta, Utc};
-use geo::{coord, point, Coord, CoordFloat, Distance, Geodesic, GeodesicMeasure, InterpolatableLine, InterpolatePoint, Length, Point, Vector2DOps};
-use geo_traits::{CoordTrait, GeometryTrait, LineTrait, MultiPointTrait, PointTrait};
+use chrono::{DateTime, Duration, Utc};
+use geo::{coord, point, Coord, Distance, InterpolatePoint, Point, Vector2DOps};
+use geo_traits::{CoordTrait, LineTrait, PointTrait};
 use linesonmaps::types::{linem::LineM, pointm::PointM};
 use geo_types::geometry::Triangle;
 
 
-pub struct LineTriangle<F> where F: Fn(Triangle, f64, f64, f64) -> (DateTime<Utc>, DateTime<Utc>){
+pub struct LineTriangle<const CRS: u64> {
     pub triangle: Triangle,
-    pub point_occupation: F,
+    pub line: LineM<CRS>,
+    pub a: f64,
+    pub b: f64,
+    pub c: f64,
+    pub d: f64
+}
+
+impl <const CRS: u64> LineTriangle<CRS> {
+    pub fn point_occupation(&self, ba: f64, bb: f64, bc: f64) -> (DateTime<Utc>, DateTime<Utc>) {
+
+        let probe_vec = probe_vector(&self.line, self.triangle, ba, bb, bc);
+        dbg!(probe_vec);
+
+
+        let ratio = probe_ratio(probe_vec,
+            self.line.end().x() - self.line.start().x(),
+            self.line.end().y() - self.line.start().y(),
+            );
+        dbg!(ratio);
+
+        let probe_m = probe_timestamp(
+            self.line.start().m,
+            self.line.end().m - self.line.start().m,
+            ratio);
+
+        let line_meters = meters_between_points(self.line.from, self.line.to);
+        
+        probe_occupation(probe_m, self.line.end().m - self.line.start().m, line_meters, self.a, self.b)
+    }
 }
 
 pub fn barycentric_to_cartesian(triangle:Triangle, ba: f64, bb: f64, bc: f64) -> geo::Coord<f64> {
@@ -19,8 +47,8 @@ pub fn barycentric_to_cartesian(triangle:Triangle, ba: f64, bb: f64, bc: f64) ->
     ]
 }
 
-pub fn line_to_aabb_triangles<const CRS: u64>(line: &LineM<CRS>, a: f64, b: f64, c: f64, d: f64) -> (Triangle, Triangle, impl Fn() -> f64, impl Fn(Triangle, f64, f64, f64) -> (DateTime<Utc>, DateTime<Utc>)
-) {
+
+pub fn line_to_triangle_pair<const CRS: u64>(line: &LineM<CRS>, a: f64, b: f64, c: f64, d: f64) -> (LineTriangle<CRS>, LineTriangle<CRS>) {
     let dx = line.end().x() - line.start().x();
     let dy = line.end().y() - line.start().y();
 
@@ -47,29 +75,9 @@ pub fn line_to_aabb_triangles<const CRS: u64>(line: &LineM<CRS>, a: f64, b: f64,
         point!(x: line.end().x()+(dy), y: line.end().y()+(-dx)),
         d);
 
-
-    let occupation_time = move || -> f64 {(line.end().m - line.start().m)/geo::algorithm::line_measures::metric_spaces::Geodesic.distance(line.from, line.to)*(a+b)}; // delta_m(s)/line_meters(m)*length(m)=occupation_time(s)
-
-    let occupation_start_end = move |triangle: Triangle, ba: f64, bb: f64, bc: f64| -> (DateTime<Utc>, DateTime<Utc>) {
-        let ratio = probe_ratio(dx, dy, triangle, ba, bb, bc);
-
-        let delta_m = line.end().m - line.start().m;
-
-        let probe_m = probe_timestamp(line.start().m, delta_m, ratio);
-        dbg!(probe_m);
-
-        let line_meters = meters_between_points(line.from, line.to);
-        
-        dbg!(probe_occupation(probe_m, delta_m, line_meters, a, b));
-        probe_occupation(probe_m, delta_m, line_meters, a, b)
-    };
-
-    let l = LineTriangle{triangle: Triangle::new(start_point_c.0, start_point_d.0, end_point_c.0),point_occupation: occupation_start_end};
     (
-        Triangle::new(start_point_c.0, start_point_d.0, end_point_c.0),
-        Triangle::new(start_point_d.0, end_point_c.0, end_point_d.0),
-        occupation_time,
-        occupation_start_end
+        LineTriangle{triangle: Triangle::new(start_point_c.0, start_point_d.0, end_point_c.0), line: line.clone(), a: a, b: b, c: c, d: d},
+        LineTriangle{triangle: Triangle::new(start_point_d.0, end_point_c.0, end_point_d.0), line: line.clone(), a: a, b: b, c: c, d: d}
     )
 }
 
@@ -100,44 +108,54 @@ pub fn vector_length(x: f64, y: f64) -> f64 {
     f64::sqrt(f64::powi(x, 2)+ f64::powi(y, 2))
 }
 
+pub fn vector_length2(x: f64, y: f64) -> f64 {
+    f64::powi(x, 2)+ f64::powi(y, 2)
+}
+
 pub fn meters_between_points<const CRS: u64>(origin: PointM<CRS>, destination: PointM<CRS>) -> f64 {
     geo::algorithm::line_measures::metric_spaces::Geodesic.distance(origin, destination)
 }
 
+pub fn probe_vector<const CRS: u64>(line: &LineM<CRS>, triangle: Triangle, ba: f64, bb: f64, bc:f64) -> Coord<f64> {
+    let coord = barycentric_to_cartesian(triangle, ba, bb, bc);
+    dbg!(coord);
+    coord! {x: coord.x-line.start().x, y: coord.y-line.start().y}
+}
+
 // ratio of how far along the line the probe point is
-pub fn probe_ratio(dx: f64, dy: f64, triangle: Triangle, ba: f64, bb: f64, bc:f64) -> f64 {
-    barycentric_to_cartesian(triangle, ba, bb, bc)
-        .dot_product(coord! {x: dx, y: dy})
-        .div(vector_length(dx, dy)) // length of the projected vector, formula: (|a_vec*b_vec|) / |a_vec| = |a_b_vec|
-        .div(vector_length(dx, dy)) // projection_length/length = ratio
+pub fn probe_ratio(coord: Coord, dx: f64, dy: f64) -> f64 {
+    coord.dot_product(coord! {x: dx, y: dy})
+        .div(vector_length(dx, dy)) // length of the projected vector, formula: (|a_vec*b_vec|) / |a_vec| = |b_a_vec|
+        .div(vector_length(dx, dy)) // projection_length/length = ratio, small optimzation: (x/y)/y == x/(y^2)
 }
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use geo::{coord, Distance, Line};
     use linesonmaps::types::{coordm::CoordM, linem::LineM};
-    use crate::modeling::line_to_aabb_triangles;
+    use crate::modeling::line_to_triangle_pair;
 
     use super::*;
 
     #[test]
-    fn dumb_test() {
-        let line = Line::new(coord! { x: 8.0, y: 56.0 }, coord! { x: 8.2, y: 56.2 });
-        /*let coords: Vec<CoordM<4326>> = [(1.0, 2.0, 0.0), (5.0, 3.0, 1.0), (3.0, 4.0, 2.0)]
+    fn half_way_test() {
+        let start_m = DateTime::parse_from_str("2024-01-01 00:00:00 +0000", "%Y-%m-%d %H:%M:%S%.3f %z").unwrap().timestamp() as f64;
+        let end_m = DateTime::parse_from_str("2024-01-01 00:02:00 +0000", "%Y-%m-%d %H:%M:%S%.3f %z").unwrap().timestamp() as f64;
+
+        let coords: Vec<CoordM<4326>> = [(8.0, 56.0, start_m), (8.005, 56.0, end_m)]            
             .map(|f| f.into())
             .to_vec();
-        let first_line = LineM::from((coords[0],coords[1]));
-        */
+        let line = LineM::<4326>::from((coords[0], coords[1]));
+        line.from.coord.m;
 
-        let coords: Vec<CoordM<4326>> = [(8.0, 56.0, 0.0), (8.2, 56.0, 3600.0)]            
-            .map(|f| f.into())
-            .to_vec();
-        let line_m = LineM::<4326>::from((coords[0], coords[1]));
-        line_m.from.coord.m;
-
-        let a = line_to_aabb_triangles(&line_m, 300.0,150.0,100.0,100.0);
-        dbg!(a.0, a.1);
-        dbg!(a.3(a.0, 0., 1., 0.));
-        dbg!(a.3(a.1, 0., 1., 0.));
+        let a = line_to_triangle_pair(&line, 1.0,1.0,10.0,10.0);
+        dbg!(start_m, end_m);
+        dbg!(a.0.point_occupation(1./2., 0., 1./2.));
+        dbg!((a.0.triangle, a.1.triangle));
+        dbg!(meters_between_points(line.from, line.to));
+        dbg!(a.0.point_occupation(1./2., 0., 1./2.).0.timestamp() as f64 - start_m);
+        assert_eq!(a.0.point_occupation(1./2., 0., 1./2.).0.timestamp() as f64 - start_m, (end_m-start_m)/2.0)
     }
 }
