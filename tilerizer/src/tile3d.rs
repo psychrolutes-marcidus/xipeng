@@ -16,7 +16,7 @@ pub struct Triangle {
 }
 
 impl RealWorldTriangle {
-    fn into_triangle(&self, sampling_zoom_level: i32) -> Triangle {
+    pub fn into_triangle(&self, sampling_zoom_level: i32) -> Triangle {
         let v1 = point_to_grid(self.v1, sampling_zoom_level);
         let v2 = point_to_grid(self.v2, sampling_zoom_level);
         let v3 = point_to_grid(self.v3, sampling_zoom_level);
@@ -26,7 +26,7 @@ impl RealWorldTriangle {
 }
 
 impl Triangle {
-    fn get_bbox(&self) -> (i32, i32, i32, i32) {
+    pub fn get_bbox(&self) -> (i32, i32, i32, i32) {
         let bbminx = cmp::min(cmp::min(self.v1.x, self.v2.x), self.v3.x);
         let bbminy = cmp::min(cmp::min(self.v1.y, self.v2.y), self.v3.y);
         let bbmaxx = cmp::max(cmp::max(self.v1.x, self.v2.x), self.v3.x);
@@ -90,12 +90,12 @@ mod tests {
     #[test]
     fn draw_triangle_test() {
         let tri = RealWorldTriangle {
-            v1: (57.0131334, 9.9908885).into(),
-            v2: (57.0123712, 9.9919149).into(),
-            v3: (57.0117842, 9.9900846).into(),
+            v1: (9.9908885, 57.0131334).into(),
+            v2: (9.9919149, 57.0123712).into(),
+            v3: (9.9900846, 57.0117842).into(),
         };
-        let result = draw_triangle(tri.into_triangle(19), 0);
+        let result = draw_triangle(tri.into_triangle(20), 0);
 
-        assert_eq!(result.len(), 55);
+        assert_eq!(result.len(), 17);
     }
 }
