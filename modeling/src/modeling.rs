@@ -131,8 +131,9 @@ pub fn probe_ratio(coord: Coord, dx: f64, dy: f64) -> f64 {
         return 0.
     }
     coord.dot_product(coord! {x: dx, y: dy})
-        .div(vector_length(dx, dy)) // length of the projected vector, formula: (|a_vec*b_vec|) / |a_vec| = |b_a_vec|
-        .div(vector_length(dx, dy)) // projection_length/length = ratio, small optimzation: (x/y)/y == x/(y^2)
+        .div(vector_length2(dx, dy)) // length of the projected vector, formula: (|a_vec*b_vec|) / |a_vec| = |b_a_vec|
+        //.div(vector_length(dx, dy)) // projection_length/length = ratio, small optimzation: (x/y)/y == x/(y^2)
+        // Small optimization, note for future: this assumes (x/y)/y == x/y^2 (i belive this is true!)
 }
 
 #[cfg(test)]
