@@ -20,14 +20,11 @@ impl <const CRS: u64> LineTriangle<CRS> {
     pub fn point_occupation(&self, ba: f64, bb: f64, bc: f64) -> (DateTime<Utc>, DateTime<Utc>) {
 
         let probe_vec = probe_vector(&self.line, self.triangle, ba, bb, bc);
-        dbg!(probe_vec);
-
 
         let ratio = probe_ratio(probe_vec,
             self.line.end().x() - self.line.start().x(),
             self.line.end().y() - self.line.start().y(),
             );
-        dbg!(ratio);
 
         let probe_m = probe_timestamp(
             self.line.start().m,
@@ -98,6 +95,12 @@ pub fn probe_timestamp(start_m: f64, delta_m: f64, ratio: f64) -> DateTime<Utc>{
 }
 
 pub fn probe_occupation(probe_m: DateTime<Utc>, delta_m: f64, line_meters: f64, a: f64, b: f64) -> (DateTime<Utc>, DateTime<Utc>) {
+    if (line_meters == 0.) {
+        return (
+            probe_m,
+            probe_m + Duration::seconds(delta_m as i64)
+        )
+    }
     (
         probe_m - Duration::seconds((delta_m/line_meters*a) as i64), // formula: timestamp - 'how much earlier the ship arrived due to its length infront of sensor'
         probe_m + Duration::seconds((delta_m/line_meters*b) as i64) // formula: timestamp + 'how much longer did the ship stay due to its length behind the sensor'
@@ -124,6 +127,9 @@ pub fn probe_vector<const CRS: u64>(line: &LineM<CRS>, triangle: Triangle, ba: f
 
 // ratio of how far along the line the probe point is
 pub fn probe_ratio(coord: Coord, dx: f64, dy: f64) -> f64 {
+    if (dx == 0. && dy == 0.) {
+        return 0.
+    }
     coord.dot_product(coord! {x: dx, y: dy})
         .div(vector_length(dx, dy)) // length of the projected vector, formula: (|a_vec*b_vec|) / |a_vec| = |b_a_vec|
         .div(vector_length(dx, dy)) // projection_length/length = ratio, small optimzation: (x/y)/y == x/(y^2)
@@ -148,14 +154,27 @@ mod tests {
             .map(|f| f.into())
             .to_vec();
         let line = LineM::<4326>::from((coords[0], coords[1]));
-        line.from.coord.m;
 
         let a = line_to_triangle_pair(&line, 1.0,1.0,10.0,10.0);
-        dbg!(start_m, end_m);
-        dbg!(a.0.point_occupation(1./2., 0., 1./2.));
-        dbg!((a.0.triangle, a.1.triangle));
-        dbg!(meters_between_points(line.from, line.to));
-        dbg!(a.0.point_occupation(1./2., 0., 1./2.).0.timestamp() as f64 - start_m);
         assert_eq!(a.0.point_occupation(1./2., 0., 1./2.).0.timestamp() as f64 - start_m, (end_m-start_m)/2.0)
+
     }
+
+    #[test]
+    fn no_distance_line() {
+        let start_m = DateTime::parse_from_str("2024-01-01 00:00:00 +0000", "%Y-%m-%d %H:%M:%S%.3f %z").unwrap().timestamp() as f64;
+        let end_m = DateTime::parse_from_str("2024-01-01 00:02:00 +0000", "%Y-%m-%d %H:%M:%S%.3f %z").unwrap().timestamp() as f64;
+
+        let coords: Vec<CoordM<4326>> = [(8.0, 56.0, start_m), (8.0, 56.0, end_m)]            
+            .map(|f| f.into())
+            .to_vec();
+        let line = LineM::<4326>::from((coords[0], coords[1]));
+
+
+        let a = line_to_triangle_pair(&line, 1.,1.,10.0,10.0);
+        assert_eq!(a.0.point_occupation(0., 1., 0.).0.timestamp(), start_m as i64);
+        assert_eq!(a.0.point_occupation(0., 1., 0.).1.timestamp(), end_m as i64);
+    }
+
+
 }
