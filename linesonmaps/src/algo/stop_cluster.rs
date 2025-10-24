@@ -1,10 +1,13 @@
 use chrono::{DateTime, TimeDelta, Utc};
+use geo::ConvexHull;
 use geo::Distance;
+use geo::Triangle;
 use itertools::*;
 use std::collections::HashSet;
 use std::num::NonZero;
 use typed_builder::TypedBuilder;
 
+use crate::types::linestringm::LineStringM;
 use crate::types::pointm::PointM;
 
 const MS_TO_KNOT: f64 = 1.9438400;
@@ -17,20 +20,14 @@ pub enum Classification {
     Unclassified,
 }
 
-// impl<Dist, Sog> DbScanBuilder<Dist, Sog>
-// where
-//     Dist: Fn(&PointM, &PointM) -> f64,
-//     Sog: Fn(f64) -> bool,
-// {
-//     pub fn builder() -> Self {
-//         Self {
-//             min_cluster_size: None,
-//             dist_thres: None,
-//             speed_thres: None,
-//             max_time_thres: None,
-//         }
-//     }
-// }
+impl Classification {
+    fn cluster(&self) -> Option<usize> {
+        match self {
+            &Classification::Core(c) | &Classification::Edge(c) => Some(c),
+            _ => None,
+        }
+    }
+}
 
 #[derive(TypedBuilder, Debug)]
 pub struct DbScanConf<Dist, const CRS: u64>
@@ -87,13 +84,6 @@ where
 
                 queue.push(ele);
             }
-            // debug_assert!(
-            //     neighbors
-            //         .iter()
-            //         .copied()
-            //         .all(|p| !matches!(self.classes[p], Unclassified)),
-            //     "all neighbor points should be at least labelled at noise"
-            // );
         }
 
         new_cluster
@@ -103,7 +93,7 @@ where
         &mut self,
         points: &'p [(PointM<CRS>, f32)],
     ) -> Vec<(&'p PointM<CRS>, Classification)> {
-        use Classification::{Noise, Unclassified};
+        use Classification::{Core, Edge, Noise, Unclassified};
 
         self.classes = vec![Unclassified; points.len()];
 
@@ -140,7 +130,7 @@ where
         //             .collect_vec()
         //             .chunk_by(|(_, a), (_, b)| a == b)
         //             .all(|c| c.iter().any(|(_, p)| matches!(p, Core(_) | Noise))), // either a chunk has a core point, or it is a "noise" cluster
-        //         "every cluster should have atleast 1 core point"
+        //         "every cluster should have atleast 1 core point \n {res:#?}"
         //     );
         // }
 
@@ -168,11 +158,11 @@ where
         // special case to test if points.last() is a neighbor
         if let Some(s) = points.get(points.len() - 2..=points.len() - 1)
             && self.temporal_sog_close(qp, &s[0].0, s[0].1)
-                && (self.dist)(qp, &s[1].0) < dist_thres
-                && qp != &s[1].0
-            {
-                let _ = neighbors.insert(points.len() - 1);
-            };
+            && (self.dist)(qp, &s[1].0) < dist_thres
+            && qp != &s[1].0
+        {
+            let _ = neighbors.insert(points.len() - 1);
+        };
         neighbors
     }
 
@@ -183,40 +173,88 @@ where
 
         temporally_close && sog < self.speed_thres
     }
+}
 
-    //TODO: maybe range query should be performed with the help of an r-tree, but that necesitates a points table
-    #[deprecated]
-    fn range_query<'p>(
-        &self,
-        qp: &PointM<CRS>,
-        points: &'p [PointM<CRS>],
-        dist_thres: f64,
-    ) -> Vec<(usize, &'p PointM<CRS>)> {
-        let mut neighbors: Vec<(usize, &PointM<CRS>)> = Vec::with_capacity(10);
-        // TODO: takewhile, if point n is not neighbor to qp, then n+1 is neither (after some threshold, but only time)
-        for ele in points.iter().enumerate() {
-            if (self.dist)(qp, ele.1) < dist_thres
-                && (ele.1.coord.m - qp.coord.m).abs() < self.max_time_thres.as_seconds_f64()
-                && !(qp == ele.1)
-            //disallow qp in neigbor set
-            //TODO: and speed
-            {
-                neighbors.push(ele);
-            }
-        }
+enum StopOrLs<const CRS: u64> {
+    Stop {
+        polygon: geo::Polygon,
+        tz_tange: (DateTime<Utc>, DateTime<Utc>),
+    },
+    LS(LineStringM<CRS>),
+}
+pub struct Trajectory<const CRS: u64>(Vec<StopOrLs<CRS>>);
 
-        neighbors
-    }
+pub fn cluster_to_traj_with_stop_object<'p, const CRS: u64>(
+    classes: Vec<(&'p PointM<CRS>, Classification)>,
+) -> Trajectory<CRS> {
+    // use Classification::{Core, Edge, Noise, Unclassified};
+    use Classification as C;
+
+    //? order by cluster index?
+    let chunks = Trajectory(
+        classes
+            .chunk_by(|(_, a), (_, b)| match a {
+                C::Core(c) | C::Edge(c) => match b {
+                    C::Core(cc) | C::Edge(cc) if c == cc => true,
+                    _ => false,
+                },
+                C::Noise | C::Unclassified => match b {
+                    C::Noise | C::Unclassified => true,
+                    _ => false,
+                },
+                // _ => true, //FIXME: inverse of previous match arm
+            })
+            .map(|c| {
+                if matches!(c.first(), Some((_, C::Core(_))) | Some((_, C::Edge(_)))) {
+                    let time_start = DateTime::from_timestamp_secs(
+                        c.iter()
+                            .map(|(p, c)| p)
+                            .min_by(|a, b| a.coord.m.total_cmp(&b.coord.m))
+                            .expect("classes should be nonempty")
+                            .coord
+                            .m as i64,
+                    )
+                    .expect("timestamp should be well within bounds");
+                    let time_end = DateTime::from_timestamp_secs(
+                        c.iter()
+                            .map(|(p, c)| p)
+                            .max_by(|a, b| a.coord.m.total_cmp(&b.coord.m))
+                            .expect("classes should be nonempty")
+                            .coord
+                            .m as i64,
+                    )
+                    .expect("timestamp should be well within bounds");
+
+                    let a = geo::LineString::from_iter(
+                        c.iter().map(|(p, c)| geo::Point::new(p.coord.x, p.coord.y)),
+                    )
+                    .convex_hull();
+
+                    StopOrLs::Stop {
+                        polygon: a,
+                        tz_tange: (time_start, time_end),
+                    }
+                } else {
+                    StopOrLs::LS(
+                        LineStringM::<CRS>::new(c.iter().map(|(p, c)| p.coord).collect_vec())
+                            .unwrap_or_else(|| LineStringM(vec![])),
+                    )
+                }
+            })
+            .collect_vec(),
+    );
+    chunks
 }
 
 #[cfg(test)]
 pub mod test {
     use chrono::TimeDelta;
     use geo::{Distance, Euclidean, Geodesic};
+    use geo_traits::LineStringTrait;
     use itertools::Itertools;
 
     use super::Classification::*;
-    use crate::algo::stop_cluster::DbScanConf;
+    use crate::algo::stop_cluster::{DbScanConf, StopOrLs, cluster_to_traj_with_stop_object};
     use crate::types::pointm::PointM;
 
     #[test]
@@ -279,5 +317,55 @@ pub mod test {
                 Noise
             ]
         );
+    }
+
+    #[test]
+    fn cluster_to_trajectory() {
+        let mut conf = DbScanConf::builder()
+            // .dist(|a, b| Geodesic.distance(*a, *b))
+            .dist(|a, b| ((b.coord.x - b.coord.x).powi(2) + (b.coord.y - a.coord.y).powi(2)).sqrt())
+            .max_time_thres(TimeDelta::new(10, 0).unwrap())
+            .min_cluster_size(3.try_into().unwrap())
+            .speed_thres(20.0)
+            .dist_thres(1.1)
+            .build();
+
+        let inputs = [
+            (1.5, 2.2),
+            (1.0, 1.1),
+            (1.2, 1.4),
+            (0.8, 1.0),
+            (3.7, 4.0),
+            (3.9, 3.9),
+            (3.6, 4.1),
+            (10.0, 100.0),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(i, (f, s))| (PointM::<4326>::from((f, s, i as f64 * 1.0)), 1_f32))
+        .collect::<Vec<_>>();
+
+        let clusters = conf.run(&inputs);
+        dbg!(&clusters);
+        assert_eq!(1, clusters.iter().filter(|å| matches!(å.1, Noise)).count());
+
+        let mut traj = cluster_to_traj_with_stop_object(clusters).0.into_iter();
+
+        assert!(matches!(
+            traj.next(),
+            Some(StopOrLs::Stop {
+                polygon: _,
+                tz_tange: _
+            })
+        ));
+        assert!(matches!(
+            traj.next(),
+            Some(StopOrLs::Stop {
+                polygon: _,
+                tz_tange: _
+            })
+        ));
+        assert!(matches!(traj.next(),Some(StopOrLs::LS(_))));
+        assert!(traj.next().is_none());
     }
 }
