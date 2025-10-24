@@ -1,0 +1,14 @@
+[package]
+name = "modeling"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+chrono = "0.4.42"
+geo = "0.31.0"
+geo-traits = "0.3.0"
+geo-types = "0.7.17"
+linesonmaps = { path = "../linesonmaps" }
+
+[lints]
+workspace = true
