@@ -1,7 +1,6 @@
 use chrono::{DateTime, TimeDelta, Utc};
 use geo::ConvexHull;
 use geo::Distance;
-use geo::Triangle;
 use itertools::*;
 use std::collections::HashSet;
 use std::num::NonZero;
@@ -93,7 +92,7 @@ where
         &mut self,
         points: &'p [(PointM<CRS>, f32)],
     ) -> Vec<(&'p PointM<CRS>, Classification)> {
-        use Classification::{Core, Edge, Noise, Unclassified};
+        use Classification::{Noise, Unclassified};
 
         self.classes = vec![Unclassified; points.len()];
 
@@ -184,14 +183,15 @@ enum StopOrLs<const CRS: u64> {
 }
 pub struct Trajectory<const CRS: u64>(Vec<StopOrLs<CRS>>);
 
-pub fn cluster_to_traj_with_stop_object<'p, const CRS: u64>(
-    classes: Vec<(&'p PointM<CRS>, Classification)>,
+pub fn cluster_to_traj_with_stop_object<const CRS: u64>(
+    classes: Vec<(&PointM<CRS>, Classification)>,
 ) -> Trajectory<CRS> {
     // use Classification::{Core, Edge, Noise, Unclassified};
     use Classification as C;
 
     //? order by cluster index?
-    let chunks = Trajectory(
+    
+    Trajectory(
         classes
             .chunk_by(|(_, a), (_, b)| match a {
                 C::Core(c) | C::Edge(c) => match b {
@@ -242,8 +242,7 @@ pub fn cluster_to_traj_with_stop_object<'p, const CRS: u64>(
                 }
             })
             .collect_vec(),
-    );
-    chunks
+    )
 }
 
 #[cfg(test)]
