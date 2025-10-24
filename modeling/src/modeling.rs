@@ -152,7 +152,6 @@ pub fn probe_vector<const CRS: u64>(
     bc: f64,
 ) -> Coord<f64> {
     let coord = barycentric_to_cartesian(triangle, ba, bb, bc);
-    dbg!(coord);
     coord! {x: coord.x-line.start().x, y: coord.y-line.start().y}
 }
 
