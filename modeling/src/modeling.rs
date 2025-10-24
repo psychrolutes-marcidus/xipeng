@@ -95,7 +95,7 @@ pub fn probe_timestamp(start_m: f64, delta_m: f64, ratio: f64) -> DateTime<Utc>{
 }
 
 pub fn probe_occupation(probe_m: DateTime<Utc>, delta_m: f64, line_meters: f64, a: f64, b: f64) -> (DateTime<Utc>, DateTime<Utc>) {
-    if (line_meters == 0.) {
+    if line_meters == 0. {
         return (
             probe_m,
             probe_m + Duration::seconds(delta_m as i64)
@@ -127,7 +127,7 @@ pub fn probe_vector<const CRS: u64>(line: &LineM<CRS>, triangle: Triangle, ba: f
 
 // ratio of how far along the line the probe point is
 pub fn probe_ratio(coord: Coord, dx: f64, dy: f64) -> f64 {
-    if (dx == 0. && dy == 0.) {
+    if dx == 0. && dy == 0. {
         return 0.
     }
     coord.dot_product(coord! {x: dx, y: dy})
@@ -138,9 +138,6 @@ pub fn probe_ratio(coord: Coord, dx: f64, dy: f64) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
-
-    use geo::{coord, Distance, Line};
     use linesonmaps::types::{coordm::CoordM, linem::LineM};
     use crate::modeling::line_to_triangle_pair;
 
@@ -176,6 +173,4 @@ mod tests {
         assert_eq!(a.0.point_occupation(0., 1., 0.).0.timestamp(), start_m as i64);
         assert_eq!(a.0.point_occupation(0., 1., 0.).1.timestamp(), end_m as i64);
     }
-
-
 }
