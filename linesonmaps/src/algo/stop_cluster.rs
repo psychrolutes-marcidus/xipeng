@@ -88,6 +88,7 @@ where
         new_cluster
     }
 
+    // inspired heavily by https://docs.rs/dbscan/latest/dbscan/struct.Model.html#method.run (crate: dbscan)
     pub fn run<'p>(
         &mut self,
         points: &'p [(PointM<CRS>, f32)],
