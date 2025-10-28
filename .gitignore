@@ -89,3 +89,5 @@ Cargo.lock
 .vscode/settings.json
 
 .env
+segment_experiment/*.csv
+segment_experiment/*.txt

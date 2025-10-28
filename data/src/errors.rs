@@ -4,7 +4,7 @@ use std::env::VarError;
 use std::net::AddrParseError;
 use std::num::ParseIntError;
 use thiserror::Error;
-use wkb::error::WkbError;
+use wkb::error::{self, WkbError};
 
 #[derive(Error, Debug)]
 pub enum DataError {
@@ -30,6 +30,8 @@ pub enum DatabaseError {
     WKBParse(#[from] WkbError),
     #[error("Linestring creation")]
     LinestringParse(#[from] LomError),
+    #[error("writer error")]
+    IoError(#[from]std::io::Error),
 }
 
 #[derive(Error, Debug)]

@@ -2,6 +2,7 @@ use super::*;
 
 use linesonmaps::types::linestringm::LineStringM;
 
+#[derive(Debug)]
 pub struct Trajectories {
     pub mmsi: Vec<MMSIType>,
     pub trajectory: Vec<LineStringM<4326>>, // Change this to the custom linestringm type.
