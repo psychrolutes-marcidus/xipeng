@@ -30,3 +30,4 @@ linesonmaps = { path = "linesonmaps" }
 data = { path = "data" }
 chrono = { version = "0.4.41", features = ["serde"] }
 geo-types = { version = "0.7.17" }
+modeling = { path = "modeling" }

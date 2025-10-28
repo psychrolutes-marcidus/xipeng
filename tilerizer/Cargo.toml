@@ -10,6 +10,7 @@ linesonmaps = { workspace = true }
 data = { workspace = true }
 chrono = { workspace = true }
 geo-types = { workspace = true }
+modeling = { workspace = true }
 
 [lints]
 workspace = true

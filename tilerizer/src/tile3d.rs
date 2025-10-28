@@ -1,28 +1,13 @@
 use crate::point_to_grid;
 use crate::{Point, PointWTime};
 use geo_types::Coord;
+use modeling::modeling::LineTriangle;
 use std::cmp;
-
-pub struct RealWorldTriangle {
-    pub v1: Coord<f64>,
-    pub v2: Coord<f64>,
-    pub v3: Coord<f64>,
-}
 
 pub struct Triangle {
     pub v1: Point,
     pub v2: Point,
     pub v3: Point,
-}
-
-impl RealWorldTriangle {
-    pub fn into_triangle(&self, sampling_zoom_level: i32) -> Triangle {
-        let v1 = point_to_grid(self.v1, sampling_zoom_level);
-        let v2 = point_to_grid(self.v2, sampling_zoom_level);
-        let v3 = point_to_grid(self.v3, sampling_zoom_level);
-
-        Triangle { v1, v2, v3 }
-    }
 }
 
 impl Triangle {
@@ -36,23 +21,11 @@ impl Triangle {
     }
 }
 
-pub fn draw_triangle(triangle: Triangle, sample_zoom_level: i32) -> Vec<PointWTime> {
-    let (bbminx, bbminy, bbmaxx, bbmaxy) = triangle.get_bbox();
-    let Triangle {
-        mut v1,
-        mut v2,
-        mut v3,
-    } = triangle;
+pub fn draw_triangle(triangle: LineTriangle<4326>, sample_zoom_level: i32) -> Vec<PointWTime> {
+    let triangle_grid = real_to_grid(&triangle, sample_zoom_level);
+    let (bbminx, bbminy, bbmaxx, bbmaxy) = triangle_grid.get_bbox();
+    let Triangle { v1, v2, v3 } = triangle_grid;
     let size = (bbmaxx - bbminx) * (bbmaxy - bbminy);
-    if v1.y > v2.y {
-        std::mem::swap(&mut v1, &mut v2);
-    }
-    if v1.y > v3.y {
-        std::mem::swap(&mut v1, &mut v3);
-    }
-    if v2.y > v3.y {
-        std::mem::swap(&mut v2, &mut v3);
-    }
 
     let mut points: Vec<PointWTime> = Vec::with_capacity(size as usize / 2 + 1);
 
@@ -64,17 +37,26 @@ pub fn draw_triangle(triangle: Triangle, sample_zoom_level: i32) -> Vec<PointWTi
             let beta = signed_total_area(x, y, v3.x, v3.y, v1.x, v1.y) / total_area;
             let gamma = signed_total_area(x, y, v1.x, v1.y, v2.x, v2.y) / total_area;
             if alpha >= 0. && beta >= 0. && gamma >= 0. {
+                let timestamp = triangle.point_occupation(alpha, beta, gamma);
                 // TODO: Get timestamp here from alpha, beta and gamma
                 let point = Point { x, y };
                 points.push(PointWTime {
                     point,
                     z: sample_zoom_level,
-                    time_stamps: Vec::new(),
+                    time_stamps: vec![timestamp],
                 });
             }
         }
     }
     points
+}
+
+fn real_to_grid(triangle: &LineTriangle<4326>, sampling_zoom_level: i32) -> Triangle {
+    Triangle {
+        v1: point_to_grid(triangle.triangle.0, sampling_zoom_level),
+        v2: point_to_grid(triangle.triangle.1, sampling_zoom_level),
+        v3: point_to_grid(triangle.triangle.2, sampling_zoom_level),
+    }
 }
 
 pub fn signed_total_area(v1x: i32, v1y: i32, v2x: i32, v2y: i32, v3x: i32, v3y: i32) -> f64 {
@@ -85,17 +67,35 @@ pub fn signed_total_area(v1x: i32, v1y: i32, v2x: i32, v2y: i32, v3x: i32, v3y: 
 
 #[cfg(test)]
 mod tests {
+    use chrono::DateTime;
+    use geo_types::{Line, Triangle};
+    use linesonmaps::types::{linem::LineM, pointm::PointM};
+    use modeling::modeling::line_to_triangle_pair;
+
     use super::*;
 
     #[test]
     fn draw_triangle_test() {
-        let tri = RealWorldTriangle {
-            v1: (9.9908885, 57.0131334).into(),
-            v2: (9.9919149, 57.0123712).into(),
-            v3: (9.9900846, 57.0117842).into(),
-        };
-        let result = draw_triangle(tri.into_triangle(20), 0);
+        // 57.01534956,9.99105250
+        // 57.01322067,9.99096883
 
-        assert_eq!(result.len(), 17);
+        let start_m =
+            DateTime::parse_from_str("2024-01-01 00:00:00 +0000", "%Y-%m-%d %H:%M:%S%.3f %z")
+                .unwrap()
+                .timestamp() as f64;
+        let end_m =
+            DateTime::parse_from_str("2024-01-01 00:02:00 +0000", "%Y-%m-%d %H:%M:%S%.3f %z")
+                .unwrap()
+                .timestamp() as f64;
+
+        let coord_1: PointM = (9.99105250, 57.01534956, start_m).into();
+        let coord_2: PointM = (9.99096883, 57.01322067, end_m).into();
+        let line = LineM::<4326>::from((coord_1, coord_2));
+        let (a, b) = line_to_triangle_pair(&line, 50.0, 50.0, 50.0, 50.0);
+        let result = draw_triangle(a, 20);
+        let result_b = draw_triangle(b, 20);
+
+        assert_eq!(result.len(), 35);
+        assert_eq!(result_b.len(), 40);
     }
 }
