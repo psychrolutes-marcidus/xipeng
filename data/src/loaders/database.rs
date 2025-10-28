@@ -1,8 +1,14 @@
 use crate::errors::DatabaseError;
+use crate::tables::trajectories::Trajectories;
 use crate::tables::*;
+use chrono::TimeDelta;
+use itertools::Itertools;
+use linesonmaps::algo::segmenter::TrajectorySplit;
 use linesonmaps::types::linestringm::LineStringM;
-use postgres::{Client, Config, NoTls};
+use postgres::types::Type;
+use postgres::{Client, Config, NoTls, Statement, Transaction};
 use std::collections::HashSet;
+use std::io::Write;
 use wkb::reader::read_wkb;
 
 pub struct DbConn {
@@ -59,6 +65,148 @@ impl DbConn {
             trajectories: traj,
         })
     }
+}
+
+pub fn insert_sub_traj_inteval(
+    conn: &mut Client,
+    split_intervals: Vec<(i32, Vec<(DateTime<Utc>, TimeDelta)>)>,
+) -> Result<Transaction, DatabaseError> {
+    let temp_table = "create temp table temp_split_interval
+    (
+        mmsi integer,
+        t_start double precision,
+        t_end double precision
+    )
+        on commit drop";
+
+    let mut t = conn.transaction().map_err(|e| DatabaseError::QueryError {
+        db_error: e,
+        msg: "could not begin transaction".into(),
+    })?;
+
+    let _ = t
+        .execute(temp_table, &[])
+        .map_err(|e| DatabaseError::QueryError {
+            db_error: e,
+            msg: "could not create temporary table".into(),
+        });
+
+    let mut writer = t
+        .copy_in("COPY temp_split_interval FROM STDIN;")
+        .map_err(|e| DatabaseError::QueryError {
+            db_error: e,
+            msg: "COPY IN".into(),
+        })?;
+
+    let num_splits = split_intervals.len();
+    let in_str = split_intervals
+        .into_iter()
+        .map(|g| {
+            g.1.into_iter()
+                .map(move |(tstz, i)| {
+                    format!(
+                        "{0}\t{1}\t{2}\n",
+                        g.0,
+                        tstz.timestamp_millis() as f64 / 1000_f64,
+                        i.as_seconds_f64()
+                    )
+                })
+                .join("")
+        })
+        .join("");
+
+    writer.write_all(&in_str.into_bytes())?;
+    let count = writer.finish().expect("tokio_postgres be trolling");
+    // debug_assert_eq!(
+    //     count as usize, num_splits,
+    //     "#copied rows should equal to #input rows"
+    // );
+
+    let insert = "insert into program_data.sub_traj_interval (mmsi, t_start, t_end)
+        select mmsi, to_timestamp(t_start) as t_start, make_interval(secs => t_end) as t_end from temp_split_interval
+            on conflict do nothing;";
+
+    let b = t
+        .execute(insert, &[])
+        .map_err(|e| DatabaseError::QueryError {
+            db_error: e,
+            msg: "failed to move from temp table to sub_traj_inteval".into(),
+        })?;
+    // debug_assert!(num_splits >= b.try_into().unwrap());
+
+    Ok(t)
+}
+
+fn insert_split_traj<const CRS: u64>(
+    conn: &mut Client,
+    sub_trajs: Vec<(i32, TrajectorySplit<CRS>, f64, TimeDelta)>,
+) -> Result<Transaction<'_>, DatabaseError> {
+    let temp_table = "create temp table temp_split 
+    (
+        mmsi integer, 
+        dist_thres double precision, 
+        time_thres_s double precision, 
+        bytev text
+    ) 
+    on commit drop;";
+
+    let mut t = conn.transaction().map_err(|e| DatabaseError::QueryError {
+        db_error: e,
+        msg: "could not begin transaction".into(),
+    })?;
+
+    let _ = t
+        .execute(temp_table, &[])
+        .map_err(|e| DatabaseError::QueryError {
+            db_error: e,
+            msg: "could not create temp table".into(),
+        })?;
+
+    let mut writer =
+        t.copy_in("COPY temp_split FROM STDIN")
+            .map_err(|e| DatabaseError::QueryError {
+                db_error: e,
+                msg: "COPY IN".into(),
+            })?;
+
+    let sub_trajs_len = sub_trajs.len();
+    let in_str = sub_trajs
+        .into_iter()
+        .map(|v| {
+            format!(
+                "{0}\t{2}\t{3}\t{1}",
+                v.0,
+                hex::encode_upper(v.1.to_wkb()),
+                v.2,
+                v.3.as_seconds_f64(),
+            )
+        })
+        .join("\n");
+
+    writer.write_all(&in_str.into_bytes())?;
+    let count = writer.finish().expect("fuck tokio_postgres"); //TODO also add error variant
+    debug_assert_eq!(
+        count as usize, sub_trajs_len,
+        "copied #rows should be equal to input rows"
+    );
+
+    let insert = "insert into program_data.trajectory_splits (mmsi, dist_thres, time_thres, sub_traj)
+        select mmsi, dist_thres, make_interval(secs=>time_thres_s) as time_thres, st_geomfromwkb(decode(bytev,'hex'),4326) as sub_traj from temp_split
+            on conflict do nothing";
+
+    let b = t
+        .execute(insert, &[])
+        .map_err(|e| DatabaseError::QueryError {
+            db_error: e,
+            msg: "failed to insert".into(),
+        })?;
+    debug_assert!(sub_trajs_len >= b.try_into().unwrap()); // some trajectories might get dropped 
+
+    // let _ = t.commit().map_err(|e| DatabaseError::QueryError {
+    //     db_error: e,
+    //     msg: "failed to commit transaction".into(),
+    // }); // temp table should be dropped by this
+    Ok(t)
 }
 
 fn fetch_nav_status(
@@ -377,8 +525,88 @@ WHERE mmsi = ANY($1)",
     Ok(gps_position_table)
 }
 
+pub struct TrajectoryIter<const CHUNK_SIZE: u32> {
+    conn: DbConn,
+    offset: u32,
+    statement: Statement,
+}
+
+impl<const CHUNK_SIZE: u32> TrajectoryIter<CHUNK_SIZE> {
+    pub fn new(conn: DbConn) -> Result<Self, DatabaseError> {
+        let mut conn = conn;
+        let statement = conn
+            .conn
+            .prepare_typed(
+                "
+                SELECT MMSI, st_asbinary(TRAJ,'NDR') as traj FROM
+                    PROGRAM_DATA.TRAJECTORIES 
+                        ORDER BY MMSI
+                        LIMIT $1 
+                        OFFSET $2;",
+                &[Type::INT8, Type::INT8],
+            )
+            .map_err(|e| DatabaseError::QueryError {
+                db_error: e,
+                msg: "error in preparing statement".into(),
+            })?;
+        Ok(TrajectoryIter {
+            conn,
+            offset: 0,
+            statement,
+        })
+    }
+}
+impl<const CHUNK_SIZE: u32> Iterator for TrajectoryIter<CHUNK_SIZE> {
+    type Item = Result<Trajectories, DatabaseError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        //! Probably doesn't behave well if view changes in between calls
+        let result = self
+            .conn
+            .conn
+            .query(
+                &self.statement,
+                &[&(CHUNK_SIZE as i64), &(self.offset as i64)],
+            )
+            .map_err(|e| DatabaseError::QueryError {
+                db_error: e,
+                msg: "trajectories query".into(),
+            });
+        let o_result = result
+            .map(|v| {
+                v.into_iter()
+                    .map(|r| {
+                        Ok::<(i32, LineStringM<4326>), DatabaseError>((
+                            r.get::<'_, _, i32>("mmsi"),
+                            LineStringM::try_from(read_wkb(
+                                r.get::<'_, _, Vec<u8>>("traj").as_slice(),
+                            )?)?,
+                        ))
+                    })
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .flatten()
+            .map(|v| {
+                let uz = v.into_iter().unzip::<i32, LineStringM, Vec<_>, Vec<_>>();
+                if !uz.0.is_empty() {
+                    Some(Trajectories {
+                        mmsi: uz.0,
+                        trajectory: uz.1,
+                    })
+                } else {
+                    None
+                }
+            })
+            .transpose();
+        self.offset = self.offset + CHUNK_SIZE;
+        o_result
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use linesonmaps::types::pointm::PointM;
+
     use super::*;
 
     #[test]
@@ -394,5 +622,61 @@ mod tests {
             .unwrap();
 
         db.fetch_data(from.into(), to.into()).unwrap();
+    }
+
+    // takes a while to run (~100 seconds, less in release)
+    #[test]
+    fn trajectory_iter_works() {
+        dotenvy::dotenv().unwrap();
+        let mut conn = DbConn::new().unwrap();
+        const SIZE: u32 = 500;
+        let count = conn
+            .conn
+            .query(
+                "select count(*) as count from program_data.trajectories",
+                &[],
+            )
+            .unwrap()
+            .first()
+            .unwrap()
+            .get::<'_, _, i64>("count") as u32;
+        let it = TrajectoryIter::<SIZE>::new(conn)
+            .expect("error in establishing connection or in preparing statement");
+
+        assert_eq!(count.div_ceil(SIZE), it.count() as u32);
+    }
+
+    #[test]
+    #[ignore = "pending deprecation, but it still works, probably :))"]
+    fn split_traj_insertion_works() {
+        dotenvy::dotenv().unwrap();
+        let mut db = DbConn::new().unwrap();
+
+        let ts = TrajectorySplit::<4326>::Point(PointM::from((1., 2., 3.5)));
+        dbg!(hex::encode(ts.clone().to_wkb()));
+        const INTERVAL: TimeDelta = TimeDelta::new(69, 0).unwrap();
+        const HEX: u32 = 0xd1070000;
+        const HEXX: u32 = 0x0000701d_u32;
+        const HEXXX_32: u32 = 0x01000040;
+        const A: u32 = 0x00_00_07_d1;
+        dbg!(hex::encode(2001_u32.to_le_bytes()));
+        let t = insert_split_traj(&mut db.conn, vec![(123456789, ts, 42.0, INTERVAL)])
+            .expect("transaction should not fail");
+        t.rollback().expect("error during rollback");
+    }
+    #[test]
+    fn split_traj_intervals_works() {
+        dotenvy::dotenv().unwrap();
+        let mut db = DbConn::new().unwrap();
+        let split_intevals = vec![(
+            123456789,
+            vec![(
+                DateTime::from_timestamp_secs(1759231496).unwrap(),
+                TimeDelta::new(100, 0).unwrap(),
+            )],
+        )];
+        let t = insert_sub_traj_inteval(&mut db.conn, split_intevals).unwrap();
+        t.rollback().expect("error during rollback");
+        // t.commit().unwrap();
     }
 }
