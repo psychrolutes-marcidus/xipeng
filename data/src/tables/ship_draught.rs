@@ -37,4 +37,8 @@ impl Draught {
 
         Ok(self.draught[index])
     }
+
+    pub fn search_range_by_time(&self, mmsi: MMSIType, time_from: TimeType, time_to: TimeType) -> Vec<usize> {
+        self.mmsi.iter().zip(self.time_begin.iter().zip(self.time_end.iter())).enumerate().filter(|(_,(m,(tb,te)))| **m == mmsi && time_from <= **te && time_to >= **tb).map(|(i,_)| i).collect()
+    }
 }

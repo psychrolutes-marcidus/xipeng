@@ -355,13 +355,14 @@ fn fetch_sog(
     sog_table.time.reserve(size);
     sog_table.sog.reserve(size);
 
-    for row in result {
+    for (i, row) in result.iter().enumerate() {
         let mmsi: i32 = row.get("mmsi");
         let time: DateTime<Utc> = row.get("timestamp");
         let sog: f32 = row.get("sog");
         sog_table.mmsi.push(mmsi);
         sog_table.time.push(time);
         sog_table.sog.push(sog);
+        sog_table.b_tree_index.insert((mmsi, time), i);
     }
     Ok(sog_table)
 }

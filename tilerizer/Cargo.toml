@@ -1,0 +1,16 @@
+[package]
+name = "tilerizer"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+cached = "0.56.0"
+itertools = "0.14.0"
+linesonmaps = { workspace = true }
+data = { workspace = true }
+chrono = { workspace = true }
+geo-types = { workspace = true }
+modeling = { workspace = true }
+
+[lints]
+workspace = true

@@ -1,10 +1,14 @@
 [workspace]
 resolver = "3"
-members = ["algorithms", "linesonmaps", "segment_experiment","data", "solomon", "tileheater"]
+members = ["algorithms", "linesonmaps", "segment_experiment","data", "solomon", "tilerizer", "modeling"]
 
 [profile.release]
 lto = true
 codegen-units = 1
+panic = "abort"
+
+[profile.dev]
+debug = 0
 
 [workspace.lints.clippy]
 # some lint suggestions are from here: https://rust-trends.com/posts/mastering-clippy-elevating-your-rust-code-quality/
@@ -19,3 +23,10 @@ needless_late_init = { level = "deny", priority = 2}
 # The following lints are not related to performance/correctness
 suspicious = "warn"
 todo = "warn"
+
+[workspace.dependencies]
+linesonmaps = { path = "linesonmaps" }
+data = { path = "data" }
+chrono = { version = "0.4.41", features = ["serde"] }
+geo-types = { version = "0.7.17" }
+modeling = { path = "modeling" }
