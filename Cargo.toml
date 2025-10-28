@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["algorithms", "linesonmaps", "segment_experiment","data", "solomon"]
+members = ["algorithms", "linesonmaps", "segment_experiment","data", "solomon", "tilerizer"]
 
 [profile.release]
 lto = true
@@ -19,3 +19,8 @@ needless_late_init = { level = "deny", priority = 2}
 # The following lints are not related to performance/correctness
 suspicious = "warn"
 todo = "warn"
+
+[workspace.dependencies]
+linesonmaps = { path = "linesonmaps" }
+data = { path = "data" }
+chrono = { version = "0.4.41", features = ["serde"] }
