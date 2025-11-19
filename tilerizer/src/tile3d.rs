@@ -1,6 +1,5 @@
-use crate::point_to_grid;
 use crate::{Point, PointWTime};
-use geo_types::Coord;
+use crate::{Zoom, point_to_grid};
 use modeling::modeling::LineTriangle;
 use std::cmp;
 
@@ -38,12 +37,12 @@ pub fn draw_triangle(triangle: LineTriangle<4326>, sample_zoom_level: i32) -> Ve
             let gamma = signed_total_area(x, y, v1.x, v1.y, v2.x, v2.y) / total_area;
             if alpha >= 0. && beta >= 0. && gamma >= 0. {
                 let timestamp = triangle.point_occupation(alpha, beta, gamma);
-                // TODO: Get timestamp here from alpha, beta and gamma
                 let point = Point { x, y };
                 points.push(PointWTime {
                     point,
                     z: sample_zoom_level,
-                    time_stamps: vec![timestamp],
+                    time_start: timestamp.0,
+                    time_end: timestamp.1,
                 });
             }
         }

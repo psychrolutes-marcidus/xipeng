@@ -22,9 +22,14 @@ pg_test = []
 
 [dependencies]
 pgrx = "=0.16.1"
-linesonmaps = { path = "../linesonmaps" }
+linesonmaps = { workspace = true }
 wkb = "0.9.1"
 geo = "0.31.0"
+tilerizer = { workspace = true }
+modeling = { workspace = true }
+serde = { workspace = true }
+chrono = { workspace = true }
+rayon = { workspace = true }
 
 [dev-dependencies]
 pgrx-tests = "=0.16.1"
