@@ -117,22 +117,6 @@ where
             .zip(std::mem::take(&mut self.classes))
             .collect();
 
-        // #[cfg(debug_assertions)]
-        // {
-        //     debug_assert!(
-        //         res.iter()
-        //             .sorted_by_cached_key(|(_, c)| match c {
-        //                 Core(v) => *v,
-        //                 Edge(v) => *v,
-        //                 Noise => 0,
-        //                 Unclassified => unreachable!(),
-        //             })
-        //             .collect_vec()
-        //             .chunk_by(|(_, a), (_, b)| a == b)
-        //             .all(|c| c.iter().any(|(_, p)| matches!(p, Core(_) | Noise))), // either a chunk has a core point, or it is a "noise" cluster
-        //         "every cluster should have atleast 1 core point \n {res:#?}"
-        //     );
-        // }
 
         res
         // todo!()
