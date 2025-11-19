@@ -117,7 +117,6 @@ where
             .zip(std::mem::take(&mut self.classes))
             .collect();
 
-
         res
     }
 
@@ -158,14 +157,14 @@ where
     }
 }
 
-enum StopOrLs<const CRS: u64> {
+pub enum StopOrLs<const CRS: u64> {
     Stop {
         polygon: geo::Polygon,
         tz_tange: (DateTime<Utc>, DateTime<Utc>),
     },
     LS(LineStringM<CRS>),
 }
-pub struct Trajectory<const CRS: u64>(Vec<StopOrLs<CRS>>);
+pub struct Trajectory<const CRS: u64>(pub Vec<StopOrLs<CRS>>);
 
 pub fn cluster_to_traj_with_stop_object<const CRS: u64>(
     classes: Vec<(&PointM<CRS>, Classification)>,
@@ -174,7 +173,7 @@ pub fn cluster_to_traj_with_stop_object<const CRS: u64>(
     use Classification as C;
 
     //? order by cluster index?
-    
+
     Trajectory(
         classes
             .chunk_by(|(_, a), (_, b)| match a {
@@ -348,7 +347,7 @@ pub mod test {
                 tz_tange: _
             })
         ));
-        assert!(matches!(traj.next(),Some(StopOrLs::LS(_))));
+        assert!(matches!(traj.next(), Some(StopOrLs::LS(_))));
         assert!(traj.next().is_none());
     }
 }
