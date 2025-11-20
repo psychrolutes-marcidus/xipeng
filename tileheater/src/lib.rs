@@ -12,7 +12,9 @@ use pgrx::{
     prelude::*,
     AnyArray,
 };
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
+use std::collections::LinkedList;
 use wkb::{reader, writer};
 
 pub mod types;
@@ -91,12 +93,6 @@ fn segment_points(linestring: &[u8]) -> SetOfIterator<'static, Vec<u8>> {
     SetOfIterator::new(data)
 }
 
-#[derive(Clone, Default, PostgresType, Serialize, Deserialize, AggregateName)]
-#[pg_binary_protocol]
-pub struct StopObjectAgg {
-    data: Vec<(Vec<u8>, Option<f64>)>,
-}
-
 #[derive(Clone, PostgresType, Serialize, Deserialize, AggregateName)]
 #[pg_binary_protocol]
 pub struct StopObject {
@@ -105,9 +101,16 @@ pub struct StopObject {
     time_end: TimestampWithTimeZone,
 }
 
+#[derive(Clone, Default, PostgresType, Serialize, Deserialize, AggregateName)]
+#[pg_binary_protocol]
+pub struct StopObjectAgg {
+    data: LinkedList<(Vec<u8>, Option<f64>)>,
+    counter: i64,
+}
+
 #[pg_aggregate(parallel_safe)]
 impl Aggregate<StopObjectAgg> for StopObjectAgg {
-    const INITIAL_CONDITION: Option<&'static str> = Some(r#"{ "data": []}"#);
+    const INITIAL_CONDITION: Option<&'static str> = Some(r#"{ "data": [], "counter": 0}"#);
     type Args = (Vec<u8>, Option<f64>);
     type Finalize = Vec<StopObject>;
     fn state(
@@ -115,15 +118,18 @@ impl Aggregate<StopObjectAgg> for StopObjectAgg {
         arg: Self::Args,
         _fcinfo: pg_sys::FunctionCallInfo,
     ) -> Self::State {
-        current.data.push(arg);
+        current.data.push_back(arg);
+        current.counter += 1;
+        notice!("counter: {}", current.counter);
         current
     }
     fn combine(
         mut current: Self::State,
-        other: Self::State,
+        mut other: Self::State,
         _fcinfo: pg_sys::FunctionCallInfo,
     ) -> Self::State {
-        current.data.extend_from_slice(&other.data);
+        notice!("Combining points");
+        current.data.append(&mut other.data);
         current
     }
     fn finalize(
@@ -131,6 +137,7 @@ impl Aggregate<StopObjectAgg> for StopObjectAgg {
         _direct_args: Self::OrderedSetArgs,
         _fcinfo: pg_sys::FunctionCallInfo,
     ) -> Self::Finalize {
+        notice!("Starting finalize");
         let mut points: Vec<_> = current
             .data
             .iter()
@@ -145,7 +152,7 @@ impl Aggregate<StopObjectAgg> for StopObjectAgg {
                 )
             })
             .collect();
-        points.sort_by(|a, b| a.0.coord.m.total_cmp(&b.0.coord.m));
+        points.par_sort_by(|a, b| a.0.coord.m.total_cmp(&b.0.coord.m));
 
         let mut conf = DbScanConf::builder()
             .dist(|a: &PointM<4326>, b: &PointM<4326>| Geodesic.distance(*a, *b))
