@@ -3,7 +3,7 @@ use geo_traits::{
     UnimplementedLine, UnimplementedMultiLineString, UnimplementedMultiPoint,
     UnimplementedMultiPolygon, UnimplementedPolygon, UnimplementedRect, UnimplementedTriangle,
 };
-use pgrx::FromDatum;
+// use pgrx::FromDatum;
 
 use crate::types::coordm::CoordM;
 use crate::types::error::Error;
@@ -181,15 +181,15 @@ impl<'a, const CRS: u64> Iterator for LinesIter<'a, CRS> {
     }
 }
 
-impl FromDatum for LineStringM<4326> {
-    unsafe fn from_polymorphic_datum(
-        datum: pgrx::pg_sys::Datum,
-        is_null: bool,
-        typoid: pgrx::pg_sys::Oid,
-    ) -> Option<Self> {
-        todo!()
-    }
-}
+// impl FromDatum for LineStringM<4326> {
+//     unsafe fn from_polymorphic_datum(
+//         datum: pgrx::pg_sys::Datum,
+//         is_null: bool,
+//         typoid: pgrx::pg_sys::Oid,
+//     ) -> Option<Self> {
+//         todo!()
+//     }
+// }
 
 #[cfg(test)]
 mod tests {
