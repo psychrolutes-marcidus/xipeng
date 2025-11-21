@@ -1,8 +1,10 @@
 use chrono::{DateTime, TimeDelta, Utc};
 use geo::ConvexHull;
 use geo::Distance;
-use itertools::*;
-// use rayon::prelude::*;
+// use itertools::*;
+use itertools::Itertools;
+use rayon::prelude::*;
+use std::collections::HashMap;
 use std::collections::HashSet;
 use std::num::NonZero;
 use typed_builder::TypedBuilder;
@@ -32,7 +34,7 @@ impl Classification {
 #[derive(TypedBuilder, Debug)]
 pub struct DbScanConf<Dist, const CRS: u64>
 where
-    Dist: Fn(&PointM<CRS>, &PointM<CRS>) -> f64,
+    Dist: Fn(&PointM<CRS>, &PointM<CRS>) -> f64 + Send + Sync,
 {
     /// Minimum number of 'nearby' points within `dist_thres` to a [Classification::Core] Point
     pub(crate) min_cluster_size: NonZero<usize>,
@@ -50,7 +52,7 @@ where
 
 impl<Dist, const CRS: u64> DbScanConf<Dist, CRS>
 where
-    Dist: Fn(&PointM<CRS>, &PointM<CRS>) -> f64,
+    Dist: Fn(&PointM<CRS>, &PointM<CRS>) -> f64 + Send + Sync,
 {
     // inpsired by existing DBSCAN implementation https://docs.rs/dbscan/latest/src/dbscan/lib.rs.html#184-205
     fn expand_custer(
@@ -63,7 +65,9 @@ where
         use Classification::{Core, Edge, Noise, Unclassified};
         let mut new_cluster = false;
         while let Some(i) = queue.pop() {
-            let neighbors = self.range_query_hash_sog(&points[i].0, points, dist_thres);
+            let neighbors: Vec<usize> =
+                self.range_query_hash_sog((&points[i].0, i), points, dist_thres);
+            // let neighbors = self.range_query_prime((&points[i].0, i), points, dist_thres);
 
             if neighbors.len() < self.min_cluster_size.get() {
                 continue;
@@ -71,6 +75,52 @@ where
             new_cluster = true;
             self.classes[i] = Core(cluster_idx);
 
+            // let _ = neighbors.par_iter().for_each(|idx| {
+            // if matches!(self.classes[*idx], Noise) {
+            //     self.classes[*idx] = Edge(cluster_idx);
+            // }
+            //     if matches!(self.classes[*idx], Unclassified) {
+            //         self.classes[*idx] = Noise;
+            //     }
+            //     // if !matches!(self.classes[*idx], Unclassified) {
+            //     //     continue;
+            //     // } else {
+            //     //     self.classes[*idx] = Noise
+            //     // }
+
+            //     queue.push(*idx);
+            // });
+
+            // let a = neighbors
+            //     .par_iter()
+            //     .map(|idx| {
+            //         let prev_class = self.classes[*idx];
+            //         let mut new_class = prev_class;
+
+            //         if matches!(prev_class, Noise) {
+            //             new_class = Edge(cluster_idx);
+            //             // self.classes[*idx] = Edge(cluster_idx);
+            //         }
+            //         if matches!(prev_class, Unclassified) {
+            //             new_class = Noise;
+            //         }
+
+            //         match prev_class {
+            //             Unclassified => (*idx, (Some(*idx), new_class)),
+            //             _ => (*idx, (None, new_class)),
+            //         }
+            //     })
+            //     .collect::<HashMap<_, _>>();
+
+            // for (idx, (q, c)) in a.into_iter() {
+            //     self.classes[idx] = c;
+            //     if let Some(i) = q {
+            //         queue.push(i);
+            //     }
+            // }
+            // map noise to edge
+            // map unclassified to noise
+            // push neighbor to queue IF element was previously unclassified
             for ele in neighbors.iter().copied() {
                 // map noise labels to at least edge
                 if matches!(self.classes[ele], Noise) {
@@ -123,49 +173,105 @@ where
 
     fn range_query_hash_sog<'p>(
         &self,
-        qp: &'p PointM<CRS>,
+        (qp, idx): (&'p PointM<CRS>, usize),
         points: &'p [(PointM<CRS>, f32)],
         dist_thres: f64,
-    ) -> HashSet<usize> {
+    ) -> Vec<usize> {
         // if qp is points[i], and points[n] is not a neighbor, then points[n-1] cannot be as well, same for points[m] and points[m+1] with n<i<m
         let mut neighbors = points // linestrings are ordered, so 'neigbors' will only be subslice of points
             .iter()
-            .tuple_windows()
+            // .tuple_windows()
             .enumerate()
-            .skip_while(|(_, (f, s))| !self.temporal_sog_close(qp, &f.0, f.1)) // skip early points in
-            .filter(|(_, (f, s))| (self.dist)(qp, &f.0) < dist_thres)
-            .take_while(|(_, (f, s))| self.temporal_sog_close(qp, &f.0, f.1))
-            .map(|(i, _)| i)
-            .collect::<HashSet<_>>();
+            // .skip_while(|(_, (f, s))| !self.temporal_sog_close(qp, &f.0, f.1)) // skip early points in
+            .skip(idx - 1)
+            // .filter(|(_, (f, s))| (self.dist)(qp, &f.0) < dist_thres)
+            .take_while(|(_, (fp, f_sog))| {
+                (self.dist)(qp, fp) < dist_thres && self.temporal_sog_close(qp, fp, *f_sog)
+            })
+            // .take(self.min_cluster_size.get() * 10) //TODO just fooling around
+            // .take_while(|(_, (f, s))| self.temporal_sog_close(qp, &f.0, f.1))
+            .map(|(i, _)| i);
+        // .collect::<Vec<_>>();
 
+        let mut rev_neighbors = points
+            .iter()
+            .enumerate()
+            .rev()
+            .skip(points.len() - idx) //TODO +- 1?
+            .take_while(|(_, (fp, f_sog))| {
+                (self.dist)(qp, fp) < dist_thres && self.temporal_sog_close(qp, fp, *f_sog)
+            })
+            .map(|(i, _)| i)
+            .collect::<Vec<_>>();
+        // special case to test if points.last() is a neighbor
+        // if let Some(s) = points.get(points.len() - 2..=points.len() - 1)
+        //     && self.temporal_sog_close(qp, &s[0].0, s[0].1)
+        //     && (self.dist)(qp, &s[1].0) < dist_thres
+        //     && qp != &s[1].0
+        // {
+        //     let _ = neighbors.push(points.len() - 1);
+        // };
+        rev_neighbors.extend(neighbors);
+        rev_neighbors
+    }
+
+    fn range_query_prime<'p>(
+        &self,
+        (qp, idx): (&'p PointM<CRS>, usize),
+        points: &'p [(PointM<CRS>, f32)],
+        dist_thres: f64,
+    ) -> Vec<usize> {
+        let neighbors = points
+            .par_windows(2)
+            .map(|w| (w[0], w[1]))
+            .enumerate()
+            .skip(idx - 1)
+            .filter(|(_, ((fp, f_sog), (sp, s_sog)))| {
+                (self.dist)(qp, fp) < dist_thres && self.temporal_sog_close(qp, fp, *f_sog)
+            })
+            .map(|(i, _)| i)
+            .collect::<Vec<_>>();
+
+        let mut neighbors = neighbors
+            .into_iter()
+            .tuple_windows()
+            .take_while(|(f, s)| s - 1 == 1)
+            .map(|(f, _)| f)
+            .collect_vec();
+        // .fold(|| Vec::<PointM>::new(), |n,cp|
+        // {
+
+        // });
         // special case to test if points.last() is a neighbor
         if let Some(s) = points.get(points.len() - 2..=points.len() - 1)
             && self.temporal_sog_close(qp, &s[0].0, s[0].1)
             && (self.dist)(qp, &s[1].0) < dist_thres
             && qp != &s[1].0
         {
-            let _ = neighbors.insert(points.len() - 1);
+            let _ = neighbors.push(points.len() - 1);
         };
         neighbors
+        // todo!()
     }
 
+    #[inline(always)]
     fn temporal_sog_close(&self, qp: &PointM<CRS>, f: &PointM<CRS>, sog: f32) -> bool {
         let f_dt = DateTime::<Utc>::from_timestamp_secs(f.coord.m as i64).unwrap();
         let qp_dt = DateTime::<Utc>::from_timestamp_secs(qp.coord.m as i64).unwrap();
         let temporally_close = (f_dt - qp_dt).abs() < self.max_time_thres;
 
-        temporally_close && sog < self.speed_thres
+        sog < self.speed_thres && temporally_close
     }
 }
 
-enum StopOrLs<const CRS: u64> {
+pub enum StopOrLs<const CRS: u64> {
     Stop {
         polygon: geo::Polygon,
         tz_tange: (DateTime<Utc>, DateTime<Utc>),
     },
     LS(LineStringM<CRS>),
 }
-pub struct Trajectory<const CRS: u64>(Vec<StopOrLs<CRS>>);
+pub struct Trajectory<const CRS: u64>(pub Vec<StopOrLs<CRS>>);
 
 pub fn cluster_to_traj_with_stop_object<const CRS: u64>(
     classes: Vec<(&PointM<CRS>, Classification)>,
@@ -239,6 +345,8 @@ pub fn triangulate_stop_object(
 
 #[cfg(test)]
 pub mod test {
+    use std::fs::File;
+
     use chrono::TimeDelta;
     use geo::{Distance, Euclidean, Geodesic};
     use geo_traits::LineStringTrait;
@@ -388,15 +496,15 @@ pub mod test {
         );
     }
     #[test]
-    #[ignore = "reason"]
+    // #[ignore = "reason"]
     fn cluster_big_traj_aarhus_odden() {
         let mut conf = DbScanConf::builder()
             // .dist(|a, b| Geodesic.distance(*a, *b))
             .dist(|a: &PointM<4326>, b| Geodesic.distance(*a, *b))
             .max_time_thres(TimeDelta::new(30 * 60, 0).unwrap())
-            .min_cluster_size(10.try_into().unwrap())
+            .min_cluster_size(100.try_into().unwrap())
             .speed_thres(1.5)
-            .dist_thres(250.0)
+            .dist_thres(50.0)
             .build();
 
         let a = include_str!("./resources/219705000_aarhus_odden.txt");
@@ -407,10 +515,37 @@ pub mod test {
 
         let ls = LineStringM::<4326>::try_from(wkb).unwrap();
 
-        let clusters = conf.run(
-            &ls.points()
-                .zip(std::iter::repeat(1.0_f32))
-                .collect::<Vec<_>>(),
-        );
+        let point_with_synthetic_sog = ls
+            .points()
+            .zip(std::iter::repeat(1.0_f32))
+            .collect::<Vec<_>>(); // all SOGS are below speed threshold.
+        let clusters = conf.run(&point_with_synthetic_sog);
+
+        let stops = cluster_to_traj_with_stop_object(clusters);
+
+        let stops = stops
+            .0
+            .into_iter()
+            .filter_map(|p| match p {
+                StopOrLs::Stop {
+                    polygon,
+                    tz_tange: _,
+                } => Some(polygon),
+                _ => None,
+            })
+            .collect_vec();
+
+        let mp = geo::MultiPolygon::new(stops.clone());
+        let opt = wkb::writer::WriteOptions {
+            endianness: wkb::Endianness::LittleEndian,
+        };
+
+        // let mut w = File::create("aarhus-odden-stops.txt").unwrap();
+        let mut w = Vec::<u8>::new();
+        let _ = wkb::writer::write_multi_polygon(&mut w, &mp, &opt).unwrap();
+        let hex = hex::encode(w);
+        std::fs::write("aarhus_odden_stops.txt", hex).unwrap();
+        dbg!(mp.0.iter().min_by_key(|x| x.exterior().num_coords()).unwrap().exterior().num_coords());
+        assert_eq!(stops.len(), 0)
     }
 }
