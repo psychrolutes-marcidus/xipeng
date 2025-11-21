@@ -67,7 +67,6 @@ where
         while let Some(i) = queue.pop() {
             let neighbors: Vec<usize> =
                 self.range_query_hash_sog((&points[i].0, i), points, dist_thres);
-            // let neighbors = self.range_query_prime((&points[i].0, i), points, dist_thres);
 
             if neighbors.len() < self.min_cluster_size.get() {
                 continue;
@@ -75,49 +74,6 @@ where
             new_cluster = true;
             self.classes[i] = Core(cluster_idx);
 
-            // let _ = neighbors.par_iter().for_each(|idx| {
-            // if matches!(self.classes[*idx], Noise) {
-            //     self.classes[*idx] = Edge(cluster_idx);
-            // }
-            //     if matches!(self.classes[*idx], Unclassified) {
-            //         self.classes[*idx] = Noise;
-            //     }
-            //     // if !matches!(self.classes[*idx], Unclassified) {
-            //     //     continue;
-            //     // } else {
-            //     //     self.classes[*idx] = Noise
-            //     // }
-
-            //     queue.push(*idx);
-            // });
-
-            // let a = neighbors
-            //     .par_iter()
-            //     .map(|idx| {
-            //         let prev_class = self.classes[*idx];
-            //         let mut new_class = prev_class;
-
-            //         if matches!(prev_class, Noise) {
-            //             new_class = Edge(cluster_idx);
-            //             // self.classes[*idx] = Edge(cluster_idx);
-            //         }
-            //         if matches!(prev_class, Unclassified) {
-            //             new_class = Noise;
-            //         }
-
-            //         match prev_class {
-            //             Unclassified => (*idx, (Some(*idx), new_class)),
-            //             _ => (*idx, (None, new_class)),
-            //         }
-            //     })
-            //     .collect::<HashMap<_, _>>();
-
-            // for (idx, (q, c)) in a.into_iter() {
-            //     self.classes[idx] = c;
-            //     if let Some(i) = q {
-            //         queue.push(i);
-            //     }
-            // }
             // map noise to edge
             // map unclassified to noise
             // push neighbor to queue IF element was previously unclassified
@@ -178,20 +134,14 @@ where
         dist_thres: f64,
     ) -> Vec<usize> {
         // if qp is points[i], and points[n] is not a neighbor, then points[n-1] cannot be as well, same for points[m] and points[m+1] with n<i<m
-        let mut neighbors = points // linestrings are ordered, so 'neigbors' will only be subslice of points
+        let mut neighbors = points // linestrings are ordered, so 'neighbors' will only be subslice of points
             .iter()
-            // .tuple_windows()
             .enumerate()
-            // .skip_while(|(_, (f, s))| !self.temporal_sog_close(qp, &f.0, f.1)) // skip early points in
             .skip(idx - 1)
-            // .filter(|(_, (f, s))| (self.dist)(qp, &f.0) < dist_thres)
             .take_while(|(_, (fp, f_sog))| {
                 (self.dist)(qp, fp) < dist_thres && self.temporal_sog_close(qp, fp, *f_sog)
             })
-            // .take(self.min_cluster_size.get() * 10) //TODO just fooling around
-            // .take_while(|(_, (f, s))| self.temporal_sog_close(qp, &f.0, f.1))
             .map(|(i, _)| i);
-        // .collect::<Vec<_>>();
 
         let mut rev_neighbors = points
             .iter()
@@ -203,57 +153,9 @@ where
             })
             .map(|(i, _)| i)
             .collect::<Vec<_>>();
-        // special case to test if points.last() is a neighbor
-        // if let Some(s) = points.get(points.len() - 2..=points.len() - 1)
-        //     && self.temporal_sog_close(qp, &s[0].0, s[0].1)
-        //     && (self.dist)(qp, &s[1].0) < dist_thres
-        //     && qp != &s[1].0
-        // {
-        //     let _ = neighbors.push(points.len() - 1);
-        // };
         rev_neighbors.extend(neighbors);
         rev_neighbors
     }
-
-    fn range_query_prime<'p>(
-        &self,
-        (qp, idx): (&'p PointM<CRS>, usize),
-        points: &'p [(PointM<CRS>, f32)],
-        dist_thres: f64,
-    ) -> Vec<usize> {
-        let neighbors = points
-            .par_windows(2)
-            .map(|w| (w[0], w[1]))
-            .enumerate()
-            .skip(idx - 1)
-            .filter(|(_, ((fp, f_sog), (sp, s_sog)))| {
-                (self.dist)(qp, fp) < dist_thres && self.temporal_sog_close(qp, fp, *f_sog)
-            })
-            .map(|(i, _)| i)
-            .collect::<Vec<_>>();
-
-        let mut neighbors = neighbors
-            .into_iter()
-            .tuple_windows()
-            .take_while(|(f, s)| s - 1 == 1)
-            .map(|(f, _)| f)
-            .collect_vec();
-        // .fold(|| Vec::<PointM>::new(), |n,cp|
-        // {
-
-        // });
-        // special case to test if points.last() is a neighbor
-        if let Some(s) = points.get(points.len() - 2..=points.len() - 1)
-            && self.temporal_sog_close(qp, &s[0].0, s[0].1)
-            && (self.dist)(qp, &s[1].0) < dist_thres
-            && qp != &s[1].0
-        {
-            let _ = neighbors.push(points.len() - 1);
-        };
-        neighbors
-        // todo!()
-    }
-
     #[inline(always)]
     fn temporal_sog_close(&self, qp: &PointM<CRS>, f: &PointM<CRS>, sog: f32) -> bool {
         let f_dt = DateTime::<Utc>::from_timestamp_secs(f.coord.m as i64).unwrap();
@@ -496,7 +398,6 @@ pub mod test {
         );
     }
     #[test]
-    // #[ignore = "reason"]
     fn cluster_big_traj_aarhus_odden() {
         let mut conf = DbScanConf::builder()
             // .dist(|a, b| Geodesic.distance(*a, *b))
@@ -540,7 +441,6 @@ pub mod test {
             endianness: wkb::Endianness::LittleEndian,
         };
 
-        // let mut w = File::create("aarhus-odden-stops.txt").unwrap();
         let mut w = Vec::<u8>::new();
         let _ = wkb::writer::write_multi_polygon(&mut w, &mp, &opt).unwrap();
         let hex = hex::encode(w);
