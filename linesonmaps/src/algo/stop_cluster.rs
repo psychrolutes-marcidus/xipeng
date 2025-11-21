@@ -12,7 +12,7 @@ use typed_builder::TypedBuilder;
 use crate::types::linestringm::LineStringM;
 use crate::types::pointm::PointM;
 
-const MS_TO_KNOT: f64 = 1.9438400;
+pub const MS_TO_KNOT: f64 = 1.9438400;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Classification {
