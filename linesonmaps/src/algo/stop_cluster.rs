@@ -2,6 +2,7 @@ use chrono::{DateTime, TimeDelta, Utc};
 use geo::ConvexHull;
 use geo::Distance;
 use itertools::*;
+// use rayon::prelude::*;
 use std::collections::HashSet;
 use std::num::NonZero;
 use typed_builder::TypedBuilder;
@@ -117,7 +118,6 @@ where
             .zip(std::mem::take(&mut self.classes))
             .collect();
 
-
         res
     }
 
@@ -174,7 +174,7 @@ pub fn cluster_to_traj_with_stop_object<const CRS: u64>(
     use Classification as C;
 
     //? order by cluster index?
-    
+
     Trajectory(
         classes
             .chunk_by(|(_, a), (_, b)| match a {
@@ -229,15 +229,25 @@ pub fn cluster_to_traj_with_stop_object<const CRS: u64>(
     )
 }
 
+pub fn triangulate_stop_object(
+    polygon: &geo::Polygon,
+) -> Result<Vec<geo::Triangle>, geo::triangulate_delaunay::TriangulationError> {
+    let t =
+        geo::algorithm::TriangulateDelaunay::constrained_triangulation(polygon, Default::default());
+    t
+}
+
 #[cfg(test)]
 pub mod test {
     use chrono::TimeDelta;
     use geo::{Distance, Euclidean, Geodesic};
     use geo_traits::LineStringTrait;
     use itertools::Itertools;
+    use wkb::reader::read_wkb;
 
     use super::Classification::*;
     use crate::algo::stop_cluster::{DbScanConf, StopOrLs, cluster_to_traj_with_stop_object};
+    use crate::types::linestringm::LineStringM;
     use crate::types::pointm::PointM;
 
     #[test]
@@ -348,7 +358,59 @@ pub mod test {
                 tz_tange: _
             })
         ));
-        assert!(matches!(traj.next(),Some(StopOrLs::LS(_))));
+        assert!(matches!(traj.next(), Some(StopOrLs::LS(_))));
         assert!(traj.next().is_none());
+    }
+
+    #[test]
+    fn cluster_big_traj() {
+        let mut conf = DbScanConf::builder()
+            // .dist(|a, b| Geodesic.distance(*a, *b))
+            .dist(|a: &PointM<4326>, b| Geodesic.distance(*a, *b))
+            .max_time_thres(TimeDelta::new(30 * 60, 0).unwrap())
+            .min_cluster_size(10.try_into().unwrap())
+            .speed_thres(1.5)
+            .dist_thres(250.0)
+            .build();
+
+        let a = include_str!("./resources/219013708.txt");
+        let a = a.replace("\"", "");
+        let hex = hex::decode(a).unwrap();
+
+        let wkb = read_wkb(&hex).unwrap();
+
+        let ls = LineStringM::<4326>::try_from(wkb).unwrap();
+
+        let clusters = conf.run(
+            &ls.points()
+                .zip(std::iter::repeat(1.0_f32))
+                .collect::<Vec<_>>(),
+        );
+    }
+    #[test]
+    #[ignore = "reason"]
+    fn cluster_big_traj_aarhus_odden() {
+        let mut conf = DbScanConf::builder()
+            // .dist(|a, b| Geodesic.distance(*a, *b))
+            .dist(|a: &PointM<4326>, b| Geodesic.distance(*a, *b))
+            .max_time_thres(TimeDelta::new(30 * 60, 0).unwrap())
+            .min_cluster_size(10.try_into().unwrap())
+            .speed_thres(1.5)
+            .dist_thres(250.0)
+            .build();
+
+        let a = include_str!("./resources/219705000_aarhus_odden.txt");
+        let a = a.replace("\"", "");
+        let hex = hex::decode(a).unwrap();
+
+        let wkb = read_wkb(&hex).unwrap();
+
+        let ls = LineStringM::<4326>::try_from(wkb).unwrap();
+
+        let clusters = conf.run(
+            &ls.points()
+                .zip(std::iter::repeat(1.0_f32))
+                .collect::<Vec<_>>(),
+        );
     }
 }
