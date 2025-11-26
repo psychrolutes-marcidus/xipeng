@@ -1,4 +1,5 @@
 use chrono::{DateTime, TimeDelta, Utc};
+use rayon::prelude::*;
 use wkb::writer::{WriteOptions, write_line_string, write_point};
 
 use crate::types::coordm::CoordM;
@@ -80,7 +81,7 @@ where
 
     // partition based on sub-trajectory length (length ==1 are not "proper" trajectories)
     let splits = output
-        .into_iter()
+        .into_par_iter()
         .map(|v| match v {
             vec if vec.len() == 1 => TrajectorySplit::Point(
                 vec.first()

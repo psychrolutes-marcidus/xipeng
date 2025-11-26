@@ -1,20 +1,16 @@
-use chrono::{Datelike, TimeDelta, Timelike};
-use geo::{Distance, Geodesic, MultiLineString};
+use bincode::{decode_from_slice, Decode, Encode};
+use chrono::{Datelike, Timelike};
+use geo::{Distance, Geodesic};
 use linesonmaps::{
     algo::{
         segmenter::{segmenter, TrajectorySplit},
         stop_cluster::{cluster_to_traj_with_stop_object, DbScanConf},
     },
-    types::{linestringm, pointm::PointM},
+    types::{linestringm, multipointm::MultiPointM, pointm::PointM},
 };
-use pgrx::{
-    pg_sys::{IndexAttrBitmapKind_INDEX_ATTR_BITMAP_IDENTITY_KEY, TZ_STRLEN_MAX},
-    prelude::*,
-    AnyArray,
-};
+use pgrx::{pg_sys::DefElemAction, prelude::*};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
-use std::collections::LinkedList;
 use wkb::{reader, writer};
 
 pub mod types;
@@ -34,22 +30,27 @@ fn segment_linestring(linestring: &[u8]) -> SetOfIterator<'static, Vec<u8>> {
     let func = |f, l| dist(f, l, 1000_f64) && time_dist(f, l, 60_f64);
     let splitted = segmenter(linestringm, func);
 
-    let sub_traj = splitted
-        .into_iter()
+    let sub_traj: Vec<_> = splitted
+        .into_par_iter()
         .map(|x| match x {
-            TrajectorySplit::SubTrajectory(line_string_m) => return Some(line_string_m),
-            TrajectorySplit::Point(_) => None,
+            TrajectorySplit::SubTrajectory(line_string_m) => {
+                let mut buf: Vec<u8> = Vec::new();
+                let options = wkb::writer::WriteOptions {
+                    endianness: wkb::Endianness::LittleEndian,
+                };
+                writer::write_line_string(&mut buf, &line_string_m, &options).expect("Nothing");
+                buf
+            }
+            TrajectorySplit::Point(point_m) => {
+                let mut buf: Vec<u8> = Vec::new();
+                let options = wkb::writer::WriteOptions {
+                    endianness: wkb::Endianness::LittleEndian,
+                };
+                writer::write_point(&mut buf, &point_m, &options).expect("Nothing");
+                buf
+            }
         })
-        .flatten()
-        .map(|line| {
-            let mut buf: Vec<u8> = Vec::new();
-            let options = wkb::writer::WriteOptions {
-                endianness: wkb::Endianness::LittleEndian,
-            };
-            writer::write_line_string(&mut buf, &line, &options).expect("Nothing");
-
-            buf
-        });
+        .collect();
 
     SetOfIterator::new(sub_traj)
 }
@@ -93,116 +94,208 @@ fn segment_points(linestring: &[u8]) -> SetOfIterator<'static, Vec<u8>> {
     SetOfIterator::new(data)
 }
 
-#[derive(Clone, PostgresType, Serialize, Deserialize, AggregateName)]
-#[pg_binary_protocol]
-pub struct StopObject {
-    geom: Vec<u8>,
-    time_start: TimestampWithTimeZone,
-    time_end: TimestampWithTimeZone,
-}
+#[pg_extern(parallel_safe, immutable)]
+fn extract_stop_objects(
+    stop_objects: &[u8],
+    sogs: Vec<Option<f64>>,
+) -> TableIterator<
+    'static,
+    (
+        name!(geom, Vec<u8>),
+        name!(time_start, TimestampWithTimeZone),
+        name!(time_end, TimestampWithTimeZone),
+    ),
+> {
+    let conv_wkb = reader::read_wkb(&stop_objects).expect("expected WKB");
+    let multipoints = MultiPointM::try_from(conv_wkb).expect("Expected MultiPointM");
 
-#[derive(Clone, Default, PostgresType, Serialize, Deserialize, AggregateName)]
-#[pg_binary_protocol]
-pub struct StopObjectAgg {
-    data: LinkedList<(Vec<u8>, Option<f64>)>,
-    counter: i64,
-}
+    notice!("Starting finalize");
+    let mut points: Vec<_> = multipoints
+        .0
+        .iter()
+        .cloned()
+        .zip(sogs.iter().map(|x| match x {
+            Some(v) => *v as f32,
+            None => f32::NAN,
+        }))
+        .collect();
+    points.par_sort_by(|a, b| a.0.coord.m.total_cmp(&b.0.coord.m));
 
-#[pg_aggregate(parallel_safe)]
-impl Aggregate<StopObjectAgg> for StopObjectAgg {
-    const INITIAL_CONDITION: Option<&'static str> = Some(r#"{ "data": [], "counter": 0}"#);
-    type Args = (Vec<u8>, Option<f64>);
-    type Finalize = Vec<StopObject>;
-    fn state(
-        mut current: Self::State,
-        arg: Self::Args,
-        _fcinfo: pg_sys::FunctionCallInfo,
-    ) -> Self::State {
-        current.data.push_back(arg);
-        current.counter += 1;
-        notice!("counter: {}", current.counter);
-        current
-    }
-    fn combine(
-        mut current: Self::State,
-        mut other: Self::State,
-        _fcinfo: pg_sys::FunctionCallInfo,
-    ) -> Self::State {
-        notice!("Combining points");
-        current.data.append(&mut other.data);
-        current
-    }
-    fn finalize(
-        current: Self::State,
-        _direct_args: Self::OrderedSetArgs,
-        _fcinfo: pg_sys::FunctionCallInfo,
-    ) -> Self::Finalize {
-        notice!("Starting finalize");
-        let mut points: Vec<_> = current
-            .data
-            .iter()
-            .map(|(p, t)| {
-                let point = wkb::reader::read_wkb(p).expect("Something");
-                (
-                    PointM::<4326>::try_from(point).expect("Something2"),
-                    match t {
-                        Some(t) => *t as f32,
-                        None => f32::NAN, // This is instead of an option :)
-                    },
+    let mut conf = DbScanConf::builder()
+        .dist(|a: &PointM<4326>, b: &PointM<4326>| Geodesic.distance(*a, *b))
+        .max_time_thres(chrono::TimeDelta::new(30 * 60, 0).expect("This did not work"))
+        .speed_thres(1.5)
+        .min_cluster_size(150.try_into().expect("Neither did this"))
+        .dist_thres(250.0)
+        .build();
+    let clusters = conf.run(&points);
+
+    let objects: Vec<_> = cluster_to_traj_with_stop_object(clusters)
+        .0
+        .iter()
+        .flat_map(|a| match a {
+            linesonmaps::algo::stop_cluster::StopOrLs::Stop { polygon, tz_tange } => {
+                let mut buf: Vec<u8> = Vec::new();
+                let options = wkb::writer::WriteOptions {
+                    endianness: wkb::Endianness::LittleEndian,
+                };
+                let ts = TimestampWithTimeZone::new(
+                    tz_tange.0.year() as i32,
+                    tz_tange.0.month() as u8,
+                    tz_tange.0.day() as u8,
+                    tz_tange.0.hour() as u8,
+                    tz_tange.0.minute() as u8,
+                    tz_tange.0.second() as f64,
                 )
-            })
-            .collect();
-        points.par_sort_by(|a, b| a.0.coord.m.total_cmp(&b.0.coord.m));
+                .unwrap();
+                let te = TimestampWithTimeZone::new(
+                    tz_tange.1.year() as i32,
+                    tz_tange.1.month() as u8,
+                    tz_tange.1.day() as u8,
+                    tz_tange.1.hour() as u8,
+                    tz_tange.1.minute() as u8,
+                    tz_tange.1.second() as f64,
+                )
+                .unwrap();
 
-        let mut conf = DbScanConf::builder()
-            .dist(|a: &PointM<4326>, b: &PointM<4326>| Geodesic.distance(*a, *b))
-            .max_time_thres(TimeDelta::new(30 * 60, 0).expect("This did not work"))
-            .speed_thres(1.5)
-            .min_cluster_size(150.try_into().expect("Neither did this"))
-            .dist_thres(250.0)
-            .build();
-        let clusters = conf.run(&points);
+                wkb::writer::write_polygon(&mut buf, &polygon, &options).expect("Something else");
+                Some((buf, ts, te))
+            }
+            _ => None,
+        })
+        .collect();
+    TableIterator::new(objects)
+}
 
-        cluster_to_traj_with_stop_object(clusters)
-            .0
-            .iter()
-            .filter_map(|a| match a {
-                linesonmaps::algo::stop_cluster::StopOrLs::Stop { polygon, tz_tange } => {
-                    let mut buf: Vec<u8> = Vec::new();
-                    let options = wkb::writer::WriteOptions {
-                        endianness: wkb::Endianness::LittleEndian,
-                    };
-                    let ts = TimestampWithTimeZone::new(
-                        tz_tange.0.year() as i32,
-                        tz_tange.0.month() as u8,
-                        tz_tange.0.day() as u8,
-                        tz_tange.0.hour() as u8,
-                        tz_tange.0.minute() as u8,
-                        tz_tange.0.second() as f64,
-                    )
-                    .unwrap();
-                    let te = TimestampWithTimeZone::new(
-                        tz_tange.1.year() as i32,
-                        tz_tange.1.month() as u8,
-                        tz_tange.1.day() as u8,
-                        tz_tange.1.hour() as u8,
-                        tz_tange.1.minute() as u8,
-                        tz_tange.1.second() as f64,
-                    )
-                    .unwrap();
+#[derive(Copy, Clone, Encode, Decode, Serialize, Deserialize)]
+pub struct TimeDelta {
+    pub micros: i128,
+}
 
-                    wkb::writer::write_polygon(&mut buf, &polygon, &options)
-                        .expect("Something else");
-                    Some(StopObject {
-                        geom: buf,
-                        time_start: ts,
-                        time_end: te,
-                    })
-                }
-                _ => None,
-            })
-            .collect()
+impl std::ops::Add<i128> for TimeDelta {
+    type Output = Self;
+
+    fn add(self, rhs: i128) -> Self::Output {
+        TimeDelta {
+            micros: self.micros + rhs,
+        }
     }
+}
+
+// #[derive(Clone, Encode, Decode, PostgresType, Deserialize, Serialize, AggregateName)]
+// #[pg_binary_protocol]
+// pub struct CombineTile {
+//     occ_time: Option<TimeDelta>,
+//     min_sog: Option<f64>,
+//     max_sog: Option<f64>,
+//     min_width: Option<f64>,
+//     max_width: Option<f64>,
+//     min_length: Option<f64>,
+//     max_length: Option<f64>,
+//     max_depth: Option<f64>,
+//     mmsi_set: std::collections::HashSet<i64>,
+// }
+
+// #[derive(Copy, Clone, PostgresType, Serialize, Deserialize)]
+// #[pg_binary_protocol]
+// pub struct Tile {
+//     occ_time: Option<Interval>,
+//     min_sog: Option<f64>,
+//     max_sog: Option<f64>,
+//     min_width: Option<f64>,
+//     max_width: Option<f64>,
+//     min_length: Option<f64>,
+//     max_length: Option<f64>,
+//     max_depth: Option<f64>,
+//     distinct_vesssel: i64,
+// }
+
+// #[pg_aggregate(parallel_safe)]
+// impl Aggregate<CombineTile> for CombineTile {
+//     type Args = (
+//         name!(occ_time, Option<Interval>),
+//         name!(min_sog, Option<f64>),
+//         name!(max_sog, Option<f64>),
+//         name!(min_width, Option<f64>),
+//         name!(max_width, Option<f64>),
+//         name!(min_length, Option<f64>),
+//         name!(max_length, Option<f64>),
+//         name!(max_depth, Option<f64>),
+//         name!(mmsi, i64),
+//     );
+//     type Finalize = Tile;
+//     const INITIAL_CONDITION: Option<&'static str> = Some(
+//         r#"{"occ_time": NULL, "min_sog": NULL, "max_sog": NULL, "min_width": NULL, "max_width": NULL, "min_length": NULL, "max_length": NULL, "max_depth": NULL, "mmsi_set": {}}"#,
+//     );
+//     fn state(
+//         mut current: Self::State,
+//         arg: Self::Args,
+//         _fcinfo: pg_sys::FunctionCallInfo,
+//     ) -> Self::State {
+//         current.occ_time = arg.0.map_or(current.occ_time, |x| {
+//             current.occ_time.map_or(
+//                 Some(TimeDelta {
+//                     micros: x.as_micros(),
+//                 }),
+//                 |y| Some(y + x.as_micros()),
+//             )
+//         });
+//         current.min_sog = min_float(current.min_sog, arg.1);
+//         current.max_sog = max_float(current.max_sog, arg.2);
+//         current.min_width = min_float(current.min_width, arg.3);
+//         current.max_width = max_float(current.max_width, arg.4);
+//         current.min_length = min_float(current.min_length, arg.5);
+//         current.max_length = max_float(current.max_length, arg.6);
+//         current.max_depth = max_float(current.max_depth, arg.7);
+//         current.mmsi_set.insert(arg.8);
+//         current
+//     }
+//     fn finalize(
+//         current: Self::State,
+//         _direct_args: Self::OrderedSetArgs,
+//         _fcinfo: pg_sys::FunctionCallInfo,
+//     ) -> Self::Finalize {
+//         Self::Finalize {
+//             distinct_vesssel: current.mmsi_set.iter().count() as i64,
+//             occ_time: current
+//                 .occ_time
+//                 .map(|x| Interval::from_micros(x.micros as i64)),
+//             min_sog: current.min_sog,
+//             max_sog: current.max_sog,
+//             min_width: current.min_width,
+//             max_width: current.max_width,
+//             min_length: current.min_length,
+//             max_length: current.max_length,
+//             max_depth: current.max_depth,
+//         }
+//     }
+//     fn combine(
+//         mut current: Self::State,
+//         other: Self::State,
+//         _fcinfo: pg_sys::FunctionCallInfo,
+//     ) -> Self::State {
+//         current.occ_time = current.occ_time.map_or(other.occ_time, |x| {
+//             other
+//                 .occ_time
+//                 .map_or(current.occ_time, |y| Some(x + y.micros))
+//         });
+//         current.min_sog = min_float(current.min_sog, other.min_sog);
+//         current.max_sog = max_float(current.max_sog, other.max_sog);
+//         current.min_width = min_float(current.min_width, other.min_width);
+//         current.max_width = max_float(current.max_width, other.max_width);
+//         current.min_length = min_float(current.min_length, other.min_length);
+//         current.max_length = max_float(current.max_length, other.max_length);
+//         current.max_depth = max_float(current.max_depth, other.max_depth);
+//         current.mmsi_set = current.mmsi_set.union(&other.mmsi_set).copied().collect();
+//         current
+//     }
+// }
+
+fn min_float(a: Option<f64>, b: Option<f64>) -> Option<f64> {
+    a.map_or(b, |x| b.map_or(Some(x), |y| Some(x.min(y))))
+}
+fn max_float(a: Option<f64>, b: Option<f64>) -> Option<f64> {
+    a.map_or(b, |x| b.map_or(Some(x), |y| Some(x.max(y))))
 }
 
 // #[pg_extern(parallel_safe, immutable)]

@@ -14,6 +14,22 @@ pub struct RenderPointsAgg {
     points: Vec<PointWTime>,
 }
 
+#[derive(Copy, Clone, Debug)]
+pub struct FilterTile(i32, i32, i32);
+
+impl FilterTile {
+    fn min_max_bb(&self, sampling_zoom_level: i32) -> (i32, i32, i32, i32) {
+        let z = self.2;
+        let diff = sampling_zoom_level - z;
+        let x_min = self.0.saturating_pow(diff as u32);
+        let y_min = self.1.saturating_pow(diff as u32);
+        let x_max = (self.0 + 1).saturating_pow(diff as u32) - 1;
+        let y_max = (self.1 + 1).saturating_pow(diff as u32) - 1;
+
+        (x_min, y_min, x_max, y_max)
+    }
+}
+
 #[pg_extern(parallel_safe, immutable)]
 fn render_geom(
     geom: &[u8],
@@ -23,6 +39,9 @@ fn render_geom(
     b: Option<f64>,
     c: Option<f64>,
     d: Option<f64>,
+    filter_tile_x: Option<i32>,
+    filter_tile_y: Option<i32>,
+    filter_tile_z: Option<i32>,
 ) -> TableIterator<
     'static,
     (
@@ -33,35 +52,81 @@ fn render_geom(
         name!(time_end, TimestampWithTimeZone),
     ),
 > {
+    let filter_tile = filter_tile_x
+        .zip(filter_tile_y.zip(filter_tile_z))
+        .map(|(x, (y, z))| FilterTile(x, y, z));
+
     let geom = wkb::reader::read_wkb(&geom).expect("Could not read wkb");
     if geom.dimension() != Dimension::Xym {
         panic!("Received non XYM dimension geometry. It will be ignored");
     }
 
-    let points = match geom.geometry_type() {
+    let points: Vec<_> = match geom.geometry_type() {
         wkb::reader::GeometryType::Point => {
             let pointm: PointM<4326> =
                 PointM::try_from(CoordM::try_from(geom).expect("Expected a PointM"))
                     .expect("Expected a PointM");
-            vec![render_point(pointm, sampling_zoom_level).change_zoom(zoom_level)]
+            vec![render_point(pointm, sampling_zoom_level, filter_tile)
+                .map(|x| x.change_zoom(zoom_level))]
+            .into_iter()
+            .flatten()
+            .collect()
         }
         wkb::reader::GeometryType::LineString => {
             let linem: LineStringM<4326> =
                 LineStringM::try_from(geom).expect("Expected a LinestringM");
+            let length = linem.0.len();
+            let linem = &linem;
+            let linem: Vec<LineStringM<4326>> = filter_tile.map_or(vec![linem.to_owned()], |ft| {
+                let indexes: Vec<usize> = linem
+                    .0
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, p)| {
+                        let grid_point = point_to_grid((p.x, p.y).into(), ft.2);
+                        grid_point.x == ft.0 && grid_point.y == ft.1
+                    })
+                    .map(|(i, _)| i)
+                    .collect();
+                indexes
+                    .chunk_by(|a, b| *a == b - 1)
+                    .map(|x| {
+                        let first = x.first().map(|x| x.saturating_sub(1));
+                        let last = x
+                            .last()
+                            .map(|x| std::cmp::max(x.saturating_add(1), length - 1));
+                        first.unwrap()..last.unwrap()
+                    })
+                    .map(|x| LineStringM::try_from(linem.0[x].to_vec()))
+                    .flatten()
+                    .collect()
+            });
             let values = a.zip(b.zip(c.zip(d))).map(|(a, (b, (c, d)))| (a, b, c, d));
             match values {
                 Some((a, b, c, d)) => {
                     let mut points: Vec<_> = linem
-                        .lines()
-                        .map(|line: LineM<4326>| line_to_triangle_pair(&line, a, b, c, d))
-                        .flat_map(|(tri1, tri2)| {
-                            [
-                                draw_triangle(tri1, sampling_zoom_level),
-                                draw_triangle(tri2, sampling_zoom_level),
-                            ]
+                        .iter()
+                        .map(|lm| {
+                            lm.lines()
+                                .map(|line: LineM<4326>| line_to_triangle_pair(&line, a, b, c, d))
+                                .flat_map(|(tri1, tri2)| {
+                                    [
+                                        draw_triangle(tri1, sampling_zoom_level),
+                                        draw_triangle(tri2, sampling_zoom_level),
+                                    ]
+                                })
+                                .flatten()
+                                .map(|x| x.change_zoom(zoom_level))
+                                .collect::<Vec<_>>()
                         })
                         .flatten()
-                        .map(|x| x.change_zoom(zoom_level))
+                        .filter(|p: &PointWTime| match filter_tile {
+                            Some(ft) => {
+                                let point = p.change_zoom(ft.2);
+                                point.point.x == ft.0 && point.point.y == ft.1
+                            }
+                            None => true,
+                        })
                         .collect();
                     points.par_sort_by_key(|p| (p.point, p.time_start, p.time_end));
                     points
@@ -76,7 +141,18 @@ fn render_geom(
                         })
                         .collect()
                 }
-                None => draw_linestring(linem, zoom_level, sampling_zoom_level),
+                None => linem
+                    .iter()
+                    .map(|lm| draw_linestring(lm, zoom_level, sampling_zoom_level))
+                    .flatten()
+                    .filter(|p| match filter_tile {
+                        Some(ft) => {
+                            let point = p.change_zoom(ft.2);
+                            point.point.x == ft.0 && point.point.y == ft.1
+                        }
+                        None => true,
+                    })
+                    .collect(),
             }
         }
         wkb::reader::GeometryType::Polygon => todo!(),
@@ -118,44 +194,39 @@ fn render_geom(
     TableIterator::new(points)
 }
 
-#[pg_aggregate(parallel_safe)]
-impl Aggregate<RenderPointsAgg> for RenderPointsAgg {
-    const INITIAL_CONDITION: Option<&'static str> = Some(r#"{ "points": [] }"#);
-    type Args = (Vec<u8>, i32, i32);
-    fn state(
-        mut current: Self::State,
-        (line, zoom, samp_zoom): Self::Args,
-        _fcinfo: pg_sys::FunctionCallInfo,
-    ) -> Self::State {
-        let line_wkb = wkb::reader::read_wkb(&line).expect("Could not read wkb");
-        if line_wkb.dimension() != Dimension::Xym {
-            notice!("Received non XYM dimension geometry. It will be ignored for the aggregate function.");
-            return current;
-        }
-
-        let points: Vec<PointWTime> = match line_wkb.geometry_type() {
-            wkb::reader::GeometryType::Point => {
-                let pointm: PointM<4326> =
-                    PointM::try_from(CoordM::try_from(line_wkb).expect("Expected a PointM"))
-                        .expect("Nothing");
-                vec![render_point(pointm, samp_zoom)]
-            }
-            wkb::reader::GeometryType::LineString => todo!(),
-            wkb::reader::GeometryType::Polygon => todo!(),
-            _ => panic!(),
-        };
-        current.points.extend_from_slice(&points);
-        current
-    }
-}
-
-fn render_point(point: PointM, sampling_zoom_level: i32) -> PointWTime {
+fn render_point(
+    point: PointM,
+    sampling_zoom_level: i32,
+    filter_tile: Option<FilterTile>,
+) -> Option<PointWTime> {
     let grid_point = point_to_grid((point.coord.x, point.coord.y).into(), sampling_zoom_level);
-    PointWTime {
-        point: grid_point,
-        z: sampling_zoom_level,
-        time_start: chrono::DateTime::from_timestamp_secs(point.coord.m as i64)
-            .expect("Should work"),
-        time_end: chrono::DateTime::from_timestamp_secs(point.coord.m as i64).expect("Should work"),
+    match filter_tile {
+        Some(tile) => {
+            let bb = tile.min_max_bb(sampling_zoom_level);
+            if grid_point.x >= bb.0
+                && grid_point.x <= bb.2
+                && grid_point.y >= bb.1
+                && grid_point.y <= bb.3
+            {
+                Some(PointWTime {
+                    point: grid_point,
+                    z: sampling_zoom_level,
+                    time_start: chrono::DateTime::from_timestamp_secs(point.coord.m as i64)
+                        .expect("Should work"),
+                    time_end: chrono::DateTime::from_timestamp_secs(point.coord.m as i64)
+                        .expect("Should work"),
+                })
+            } else {
+                None
+            }
+        }
+        None => Some(PointWTime {
+            point: grid_point,
+            z: sampling_zoom_level,
+            time_start: chrono::DateTime::from_timestamp_secs(point.coord.m as i64)
+                .expect("Should work"),
+            time_end: chrono::DateTime::from_timestamp_secs(point.coord.m as i64)
+                .expect("Should work"),
+        }),
     }
 }

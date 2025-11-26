@@ -101,7 +101,7 @@ impl std::ops::Sub for Point {
 }
 
 pub fn draw_linestring(
-    ls: LineStringM<4326>,
+    ls: &LineStringM<4326>,
     zoom_level: i32,
     sampling_zoom_level: i32,
 ) -> Vec<PointWTime> {

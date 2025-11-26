@@ -30,6 +30,7 @@ modeling = { workspace = true }
 serde = { workspace = true }
 chrono = { workspace = true }
 rayon = { workspace = true }
+bincode = "2.0.1"
 
 [dev-dependencies]
 pgrx-tests = "=0.16.1"
