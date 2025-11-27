@@ -1,6 +1,14 @@
-use bincode::{decode_from_slice, Decode, Encode};
+use bincode::{Decode, Encode};
 use chrono::{Datelike, Timelike};
+use geo::Coord;
+use geo::LineString;
+use geo::Polygon;
+use geo::TriangulateDelaunay;
 use geo::{Distance, Geodesic};
+use geo_traits::CoordTrait;
+use geo_traits::GeometryTrait;
+use geo_traits::LineStringTrait;
+use geo_traits::PolygonTrait;
 use linesonmaps::{
     algo::{
         segmenter::{segmenter, TrajectorySplit},
@@ -8,10 +16,15 @@ use linesonmaps::{
     },
     types::{linestringm, multipointm::MultiPointM, pointm::PointM},
 };
-use pgrx::{pg_sys::DefElemAction, prelude::*};
+use pgrx::prelude::*;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
-use wkb::{reader, writer};
+use tilerizer::tile3d::draw_triangle;
+use tilerizer::Zoom;
+use wkb::{
+    reader::{self, Dimension},
+    writer,
+};
 
 pub mod types;
 
@@ -30,28 +43,24 @@ fn segment_linestring(linestring: &[u8]) -> SetOfIterator<'static, Vec<u8>> {
     let func = |f, l| dist(f, l, 1000_f64) && time_dist(f, l, 60_f64);
     let splitted = segmenter(linestringm, func);
 
-    let sub_traj: Vec<_> = splitted
-        .into_par_iter()
-        .map(|x| match x {
-            TrajectorySplit::SubTrajectory(line_string_m) => {
-                let mut buf: Vec<u8> = Vec::new();
-                let options = wkb::writer::WriteOptions {
-                    endianness: wkb::Endianness::LittleEndian,
-                };
-                writer::write_line_string(&mut buf, &line_string_m, &options).expect("Nothing");
-                buf
-            }
-            TrajectorySplit::Point(point_m) => {
-                let mut buf: Vec<u8> = Vec::new();
-                let options = wkb::writer::WriteOptions {
-                    endianness: wkb::Endianness::LittleEndian,
-                };
-                writer::write_point(&mut buf, &point_m, &options).expect("Nothing");
-                buf
-            }
-        })
-        .collect();
-
+    let sub_traj = splitted.into_iter().map(|x| match x {
+        TrajectorySplit::SubTrajectory(line_string_m) => {
+            let mut buf: Vec<u8> = Vec::new();
+            let options = wkb::writer::WriteOptions {
+                endianness: wkb::Endianness::LittleEndian,
+            };
+            writer::write_line_string(&mut buf, &line_string_m, &options).expect("Nothing");
+            buf
+        }
+        TrajectorySplit::Point(point_m) => {
+            let mut buf: Vec<u8> = Vec::new();
+            let options = wkb::writer::WriteOptions {
+                endianness: wkb::Endianness::LittleEndian,
+            };
+            writer::write_point(&mut buf, &point_m, &options).expect("Nothing");
+            buf
+        }
+    });
     SetOfIterator::new(sub_traj)
 }
 
@@ -109,7 +118,6 @@ fn extract_stop_objects(
     let conv_wkb = reader::read_wkb(&stop_objects).expect("expected WKB");
     let multipoints = MultiPointM::try_from(conv_wkb).expect("Expected MultiPointM");
 
-    notice!("Starting finalize");
     let mut points: Vec<_> = multipoints
         .0
         .iter()
@@ -130,9 +138,9 @@ fn extract_stop_objects(
         .build();
     let clusters = conf.run(&points);
 
-    let objects: Vec<_> = cluster_to_traj_with_stop_object(clusters)
+    let objects = cluster_to_traj_with_stop_object(clusters)
         .0
-        .iter()
+        .into_iter()
         .flat_map(|a| match a {
             linesonmaps::algo::stop_cluster::StopOrLs::Stop { polygon, tz_tange } => {
                 let mut buf: Vec<u8> = Vec::new();
@@ -157,14 +165,74 @@ fn extract_stop_objects(
                     tz_tange.1.second() as f64,
                 )
                 .unwrap();
+                if polygon.exterior().0.len() < 4 {
+                    return None;
+                }
 
                 wkb::writer::write_polygon(&mut buf, &polygon, &options).expect("Something else");
                 Some((buf, ts, te))
             }
             _ => None,
-        })
-        .collect();
+        });
     TableIterator::new(objects)
+}
+
+#[pg_extern(parallel_safe)]
+fn render_stop_object(
+    poly: &[u8],
+    zoom_level: i32,
+    sampling_zoom_level: i32,
+    filter_x: Option<i32>,
+    filter_y: Option<i32>,
+    filter_z: Option<i32>,
+) -> TableIterator<'static, (name!(x, i32), name!(y, i32), name!(z, i32))> {
+    let filter = filter_x
+        .zip(filter_y.zip(filter_z))
+        .map(|(x, (y, z))| (x, y, z));
+    let geom = wkb::reader::read_wkb(&poly).expect("Could not read wkb");
+    if geom.dimension() != Dimension::Xy {
+        panic!("Received non XY dimension geometry");
+    }
+
+    let poly: Option<Polygon> = match geom.as_type() {
+        geo_traits::GeometryType::Polygon(poly) => {
+            let coords: Option<Vec<_>> = poly
+                .exterior()
+                .map(|x| x.coords().map(|c| Coord { x: c.x(), y: c.y() }).collect());
+            let ls = coords.and_then(|c| Some(LineString::new(c)));
+            ls.and_then(|x| Some(Polygon::new(x, vec![])))
+        }
+        _ => panic!("Expected Polygon"),
+    };
+    let triangles = poly.and_then(|p| p.constrained_triangulation(Default::default()).ok());
+    let points: Option<Vec<_>> = triangles.map(|ts| {
+        ts.iter()
+            .map(|t| draw_triangle(*t, sampling_zoom_level))
+            .flatten()
+            .filter(|p| match filter {
+                Some(ft) => {
+                    let point = p.change_zoom(ft.2);
+                    point.point.x == ft.0 && point.point.y == ft.1
+                }
+                None => true,
+            })
+            .map(|p| p.change_zoom(zoom_level))
+            .map(|p| (p.point.x, p.point.y, p.z))
+            .collect()
+    });
+    let points = points.map(|x| {
+        let mut x = x;
+        x.sort_by_cached_key(|x| *x);
+        let points: Vec<_> = x
+            .chunk_by(|a, b| a == b)
+            .flat_map(|x| x.first().map(|x| x.to_owned()))
+            .collect();
+        points
+    });
+    match points {
+        Some(ps) => TableIterator::new(ps),
+        None => TableIterator::empty(),
+    }
 }
 
 #[derive(Copy, Clone, Encode, Decode, Serialize, Deserialize)]

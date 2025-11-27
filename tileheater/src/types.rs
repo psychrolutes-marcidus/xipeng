@@ -1,12 +1,19 @@
 use std::num::NonZero;
 
 use chrono::{Datelike, Timelike};
+use geo::Coord;
+use geo::LineString;
+use geo::Polygon;
+use geo_traits::CoordTrait;
+use geo_traits::GeometryTrait;
+use geo_traits::LineStringTrait;
+use geo_traits::PolygonTrait;
 use linesonmaps::types::{coordm::CoordM, linem::LineM, linestringm::LineStringM, pointm::PointM};
 use modeling::modeling::line_to_triangle_pair;
 use pgrx::prelude::*;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
-use tilerizer::{draw_linestring, point_to_grid, tile3d::draw_triangle, PointWTime, Zoom};
+use tilerizer::{draw_linestring, point_to_grid, tile3d::draw_line_triangle, PointWTime, Zoom};
 use wkb::reader::Dimension;
 
 #[derive(Clone, Default, PostgresType, Serialize, Deserialize, AggregateName)]
@@ -111,8 +118,8 @@ fn render_geom(
                                 .map(|line: LineM<4326>| line_to_triangle_pair(&line, a, b, c, d))
                                 .flat_map(|(tri1, tri2)| {
                                     [
-                                        draw_triangle(tri1, sampling_zoom_level),
-                                        draw_triangle(tri2, sampling_zoom_level),
+                                        draw_line_triangle(tri1, sampling_zoom_level),
+                                        draw_line_triangle(tri2, sampling_zoom_level),
                                     ]
                                 })
                                 .flatten()

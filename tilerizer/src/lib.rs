@@ -16,6 +16,34 @@ pub struct Point {
     pub y: i32,
 }
 
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Serialize, Deserialize)]
+pub struct PointWZ {
+    pub point: Point,
+    pub z: i32,
+}
+
+impl Zoom for PointWZ {
+    fn change_zoom(self, zoom_level: i32) -> Self {
+        let change = self.z - zoom_level;
+        let x;
+        let y;
+
+        if change > 0 {
+            x = self.point.x / 2_i32.pow(change.abs() as u32);
+            y = self.point.y / 2_i32.pow(change.abs() as u32);
+        } else {
+            x = self.point.x / 2_i32.pow(change.abs() as u32);
+            y = self.point.y / 2_i32.pow(change.abs() as u32);
+        }
+
+        Self {
+            point: Point { x: x, y: y },
+            z: zoom_level,
+            ..self
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, Copy, Clone, Serialize, Deserialize, PostgresType)]
 pub struct PointWTime {
     pub point: Point,
@@ -177,6 +205,7 @@ pub fn enhance_point(
         .collect()
 }
 
+#[inline(always)]
 pub fn point_to_grid(point: Coord<f64>, sampling_zoom_level: i32) -> Point {
     use std::f64::consts::*;
 

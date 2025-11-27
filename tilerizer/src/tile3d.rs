@@ -1,4 +1,4 @@
-use crate::{Point, PointWTime};
+use crate::{Point, PointWTime, PointWZ};
 use crate::{Zoom, point_to_grid};
 use modeling::modeling::LineTriangle;
 use std::cmp;
@@ -20,8 +20,8 @@ impl Triangle {
     }
 }
 
-pub fn draw_triangle(triangle: LineTriangle<4326>, sample_zoom_level: i32) -> Vec<PointWTime> {
-    let triangle_grid = real_to_grid(&triangle, sample_zoom_level);
+pub fn draw_line_triangle(triangle: LineTriangle<4326>, sample_zoom_level: i32) -> Vec<PointWTime> {
+    let triangle_grid = real_to_grid(&triangle.triangle, sample_zoom_level);
     let (bbminx, bbminy, bbmaxx, bbmaxy) = triangle_grid.get_bbox();
     let Triangle { v1, v2, v3 } = triangle_grid;
     let size = (bbmaxx - bbminx) * (bbmaxy - bbminy);
@@ -50,11 +50,38 @@ pub fn draw_triangle(triangle: LineTriangle<4326>, sample_zoom_level: i32) -> Ve
     points
 }
 
-fn real_to_grid(triangle: &LineTriangle<4326>, sampling_zoom_level: i32) -> Triangle {
+pub fn draw_triangle(triangle: geo_types::Triangle, sample_zoom_level: i32) -> Vec<PointWZ> {
+    let triangle_grid = real_to_grid(&triangle, sample_zoom_level);
+    let (bbminx, bbminy, bbmaxx, bbmaxy) = triangle_grid.get_bbox();
+    let Triangle { v1, v2, v3 } = triangle_grid;
+    let size = (bbmaxx - bbminx) * (bbmaxy - bbminy);
+
+    let mut points: Vec<PointWZ> = Vec::with_capacity(size as usize / 2 + 1);
+
+    let total_area = signed_total_area(v1.x, v1.y, v2.x, v2.y, v3.x, v3.y);
+
+    for x in bbminx..=bbmaxx {
+        for y in bbminy..=bbmaxy {
+            let alpha = signed_total_area(x, y, v2.x, v2.y, v3.x, v3.y) / total_area;
+            let beta = signed_total_area(x, y, v3.x, v3.y, v1.x, v1.y) / total_area;
+            let gamma = signed_total_area(x, y, v1.x, v1.y, v2.x, v2.y) / total_area;
+            if alpha >= 0. && beta >= 0. && gamma >= 0. {
+                let point = Point { x, y };
+                points.push(PointWZ {
+                    point: point,
+                    z: sample_zoom_level,
+                });
+            }
+        }
+    }
+    points
+}
+
+fn real_to_grid(triangle: &geo_types::Triangle, sampling_zoom_level: i32) -> Triangle {
     Triangle {
-        v1: point_to_grid(triangle.triangle.0, sampling_zoom_level),
-        v2: point_to_grid(triangle.triangle.1, sampling_zoom_level),
-        v3: point_to_grid(triangle.triangle.2, sampling_zoom_level),
+        v1: point_to_grid(triangle.0, sampling_zoom_level),
+        v2: point_to_grid(triangle.1, sampling_zoom_level),
+        v3: point_to_grid(triangle.2, sampling_zoom_level),
     }
 }
 
@@ -91,8 +118,8 @@ mod tests {
         let coord_2: PointM = (9.99096883, 57.01322067, end_m).into();
         let line = LineM::<4326>::from((coord_1, coord_2));
         let (a, b) = line_to_triangle_pair(&line, 50.0, 50.0, 50.0, 50.0);
-        let result = draw_triangle(a, 20);
-        let result_b = draw_triangle(b, 20);
+        let result = draw_line_triangle(a, 20);
+        let result_b = draw_line_triangle(b, 20);
 
         assert_eq!(result.len(), 35);
         assert_eq!(result_b.len(), 40);
