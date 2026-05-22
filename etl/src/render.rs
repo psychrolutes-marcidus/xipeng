@@ -15,6 +15,7 @@ use r2d2::ManageConnection;
 use rayon::prelude::*;
 use rstar::primitives::{GeomWithData, Rectangle};
 use rstar::{Envelope, RTree, RTreeObject};
+use sysinfo::System;
 
 use crate::RenderCell;
 
@@ -198,7 +199,7 @@ CREATE TEMP TABLE IF NOT EXISTS draught_nulls_by_ship_type AS (
     lines ap
     LEFT JOIN draught_dist_mmsi_normal cbm ON ap.mmsi = cbm.mmsi
     AND ap.draught = cbm.draught
-    LEFT JOIN draught_dist_vessel_type_normal cbv ON ap.ship_type = cbv.ship_type
+    LEFT JOIN draught_dist_vessel_type_normal cbv ON ap.mmsi= cbv.mmsi
     AND ap.draught = cbv.draught
     LEFT JOIN draught_nulls_by_ship_type dnull ON ap.ship_type = dnull.ship_type
     LEFT JOIN vessel_stats.linear_regression lr ON ap.ship_type = lr.ship_type
@@ -236,7 +237,7 @@ fn search_tile(
     y: i32,
     z: i32,
 ) {
-    let wkb_row = manager.query_row("SELECT ST_AsWKB(ST_Transform(geom, 'EPSG:4326', 'EPSG:3857', always_xy := true)) FROM lines_with_geom WHERE ST_Intersects(ST_Transform(ST_TileEnvelope(?, ?, ?), 'EPSG:3857', 'EPSG:4326', always_xy := true), geom) LIMIT 1", [z, x, y], |row| row.get::<_, Vec<u8>>(0)).optional().unwrap();
+    let wkb_row = manager.query_row("SELECT ST_AsWKB(ST_Transform(geom, 'EPSG:4326', 'EPSG:3857', always_xy := true)) FROM lines_with_geom WHERE ST_Intersects(ST_Transform(ST_TileEnvelope(?, ?, ?), 'EPSG:3857', 'EPSG:4326', always_xy := true), geom) ORDER BY area DESC LIMIT 1", [z, x, y], |row| row.get::<_, Vec<u8>>(0)).optional().unwrap();
     match wkb_row {
         Some(w) => {
             let mut index = index.write().expect("Could not get write lock");
@@ -291,9 +292,14 @@ fn get_index(
     ),
     Box<dyn std::error::Error>,
 > {
-    let mut stmt = con.prepare(
-        "SELECT ST_AsWKB(ST_Transform(geom, 'EPSG:4326', 'EPSG:3857')) FROM lines_with_geom ORDER BY area DESC LIMIT 100000",
-    )?;
+    let sys = System::new_all();
+    let amem = sys.total_memory();
+
+    let sql = format!(
+        "SELECT ST_AsWKB(ST_Transform(geom, 'EPSG:4326', 'EPSG:3857')) FROM lines_with_geom ORDER BY area DESC LIMIT {}",
+        amem / 64
+    );
+    let mut stmt = con.prepare(&sql)?;
     let (aabbs, geoms): (Vec<_>, Vec<_>) = stmt
         .query_map([], |row| row.get::<_, Vec<u8>>(0))?
         .map(|x| x.unwrap())
