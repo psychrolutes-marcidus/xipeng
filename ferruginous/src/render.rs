@@ -52,7 +52,8 @@ impl VScalar for RenderGeom {
     ) -> Result<(), Box<dyn std::error::Error>> {
         // This is data preparation.
         // In order to use the data in Rust it must first be transformed into Rust slices.
-        let input_len = input.len();
+        let len = input.len();
+        let input_len = len;
         let from_point = input.struct_vector(0);
         let to_point = input.struct_vector(1);
         let dimensions = input.struct_vector(2);
@@ -61,15 +62,15 @@ impl VScalar for RenderGeom {
         let from_lon = from_point.child(0, input_len);
         let from_lat = from_point.child(1, input_len);
         let from_time = from_point.child(2, input_len);
-        let from_lon_s: &[f32] = from_lon.as_slice_with_len(input_len);
-        let from_lat_s: &[f32] = from_lat.as_slice_with_len(input_len);
-        let from_time_s: &[f64] = from_time.as_slice_with_len(input_len);
+        let from_lon_s: &[f32] = unsafe { from_lon.as_slice_with_len(input_len) };
+        let from_lat_s: &[f32] = unsafe { from_lat.as_slice_with_len(input_len) };
+        let from_time_s: &[f64] = unsafe { from_time.as_slice_with_len(input_len) };
         let to_lon = to_point.child(0, input_len);
         let to_lat = to_point.child(1, input_len);
         let to_time = to_point.child(2, input_len);
-        let to_lon_s: &[f32] = to_lon.as_slice_with_len(input_len);
-        let to_lat_s: &[f32] = to_lat.as_slice_with_len(input_len);
-        let to_time_s: &[f64] = to_time.as_slice_with_len(input_len);
+        let to_lon_s: &[f32] = unsafe { to_lon.as_slice_with_len(input_len) };
+        let to_lat_s: &[f32] = unsafe { to_lat.as_slice_with_len(input_len) };
+        let to_time_s: &[f64] = unsafe { to_time.as_slice_with_len(input_len) };
         let to_lon_nulls = (0..input_len)
             .into_iter()
             .map(|x| to_lon.row_is_null(x as u64));
@@ -96,7 +97,7 @@ impl VScalar for RenderGeom {
         let to_bow_nulls = (0..input_len)
             .into_iter()
             .map(|x| to_bow.row_is_null(x as u64));
-        let to_bow_s: &[f32] = to_bow.as_slice_with_len(input_len);
+        let to_bow_s: &[f32] = unsafe { to_bow.as_slice_with_len(input_len) };
         let to_bow_option = to_bow_s.iter().zip(to_bow_nulls).map(|(&d, n)| match n {
             false => Some(d),
             true => None,
@@ -105,7 +106,7 @@ impl VScalar for RenderGeom {
         let to_starboard_nulls = (0..input_len)
             .into_iter()
             .map(|x| to_starboard.row_is_null(x as u64));
-        let to_starboard_s: &[f32] = to_starboard.as_slice_with_len(input_len);
+        let to_starboard_s: &[f32] = unsafe { to_starboard.as_slice_with_len(input_len) };
         let to_starboard_option = to_starboard_s
             .iter()
             .zip(to_starboard_nulls)
@@ -117,7 +118,7 @@ impl VScalar for RenderGeom {
         let to_stern_nulls = (0..input_len)
             .into_iter()
             .map(|x| to_stern.row_is_null(x as u64));
-        let to_stern_s: &[f32] = to_stern.as_slice_with_len(input_len);
+        let to_stern_s: &[f32] = unsafe { to_stern.as_slice_with_len(input_len) };
         let to_stern_option = to_stern_s
             .iter()
             .zip(to_stern_nulls)
@@ -129,7 +130,7 @@ impl VScalar for RenderGeom {
         let to_port_nulls = (0..input_len)
             .into_iter()
             .map(|x| to_port.row_is_null(x as u64));
-        let to_port_s: &[f32] = to_port.as_slice_with_len(input_len);
+        let to_port_s: &[f32] = unsafe { to_port.as_slice_with_len(input_len) };
         let to_port_option = to_port_s.iter().zip(to_port_nulls).map(|(&d, n)| match n {
             false => Some(d),
             true => None,
@@ -144,9 +145,9 @@ impl VScalar for RenderGeom {
         let x = metadata.child(0, input_len);
         let y = metadata.child(1, input_len);
         let level = metadata.child(2, input_len);
-        let x_s: &[u32] = x.as_slice_with_len(input_len);
-        let y_s: &[u32] = y.as_slice_with_len(input_len);
-        let level_s: &[u8] = level.as_slice_with_len(input_len);
+        let x_s: &[u32] = unsafe { x.as_slice_with_len(input_len) };
+        let y_s: &[u32] = unsafe { y.as_slice_with_len(input_len) };
+        let level_s: &[u8] = unsafe { level.as_slice_with_len(input_len) };
 
         let from_point = from_lon_s
             .iter()
@@ -186,10 +187,10 @@ impl VScalar for RenderGeom {
         let draught_dist_type = scoring.child(1, input_len);
         let draughts_null = scoring.child(2, input_len);
         let r_squared = scoring.child(3, input_len);
-        let draught_dist_mmsi_s: &[f32] = draught_dist_mmsi.as_slice_with_len(input_len);
-        let draught_dist_type_s: &[f32] = draught_dist_type.as_slice_with_len(input_len);
-        let draughts_null_s: &[f32] = draughts_null.as_slice_with_len(input_len);
-        let r_squared_s: &[f32] = r_squared.as_slice_with_len(input_len);
+        let draught_dist_mmsi_s: &[f32] = unsafe { draught_dist_mmsi.as_slice_with_len(input_len) };
+        let draught_dist_type_s: &[f32] = unsafe { draught_dist_type.as_slice_with_len(input_len) };
+        let draughts_null_s: &[f32] = unsafe { draughts_null.as_slice_with_len(input_len) };
+        let r_squared_s: &[f32] = unsafe { r_squared.as_slice_with_len(input_len) };
 
         let scoring_vals = draught_dist_mmsi_s
             .iter()
@@ -301,7 +302,7 @@ impl VScalar for RenderGeom {
         // z_out.copy(&z);
         // time_begin_out.copy(&tb);
         // time_end_out.copy(&te);
-        score_out.copy(&score);
+        unsafe { score_out.copy(&score) };
 
         Ok(())
     }
@@ -375,9 +376,9 @@ impl VScalar for Polyganize {
         let from_lon = from_point.child(0, input_len);
         let from_lat = from_point.child(1, input_len);
         let from_time = from_point.child(2, input_len);
-        let from_lon_s: &[f32] = from_lon.as_slice_with_len(input_len);
-        let from_lat_s: &[f32] = from_lat.as_slice_with_len(input_len);
-        let from_time_s: &[f64] = from_time.as_slice_with_len(input_len);
+        let from_lon_s: &[f32] = unsafe { from_lon.as_slice_with_len(input_len) };
+        let from_lat_s: &[f32] = unsafe { from_lat.as_slice_with_len(input_len) };
+        let from_time_s: &[f64] = unsafe { from_time.as_slice_with_len(input_len) };
         let to_lon = to_point_input.child(0, input_len);
         let to_lat = to_point_input.child(1, input_len);
         let to_time = to_point_input.child(2, input_len);

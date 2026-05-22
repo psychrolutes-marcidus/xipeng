@@ -112,7 +112,6 @@ CREATE TEMP TABLE IF NOT EXISTS draught_nulls_by_ship_type AS (
       WHEN LEAD (ap.timestamp) OVER (
       PARTITION BY mmsi
         ORDER BY
-          ap.mmsi,
           ap.timestamp
       ) > ap.timestamp
       AND trajectory_split (
@@ -121,7 +120,6 @@ CREATE TEMP TABLE IF NOT EXISTS draught_nulls_by_ship_type AS (
           PARTITION BY
             mmsi
           ORDER BY
-            ap.mmsi,
             ap.timestamp
         )
       )
@@ -130,20 +128,17 @@ CREATE TEMP TABLE IF NOT EXISTS draught_nulls_by_ship_type AS (
           PARTITION BY
             mmsi
           ORDER BY
-            ap.mmsi,
             ap.timestamp
         ).lat != ap.point.lat
         OR LEAD (ap.point) OVER (
           PARTITION BY
             mmsi
           ORDER BY
-            ap.mmsi,
             ap.timestamp
         ).lon != ap.point.lon
       ) THEN LEAD (ap.point, 1, NULL) OVER (
         PARTITION BY mmsi
         ORDER BY
-          ap.mmsi,
           ap.timestamp
       )
       ELSE NULL
@@ -186,7 +181,8 @@ CREATE TEMP TABLE IF NOT EXISTS draught_nulls_by_ship_type AS (
       AND dimensions IS NOT NULL
       THEN st_geomfromwkb (polyganize (ap.point, ap.next_point, dimensions))
       WHEN ap.next_point IS NOT NULL
-      AND dimensions IS NULL THEN ST_MakeLine (
+      AND dimensions IS NULL
+      THEN ST_MakeLine (
         ST_Point (ap.point.lon, ap.point.lat),
         ST_Point (ap.next_point.lon, ap.next_point.lat)
       )
@@ -293,7 +289,7 @@ fn get_index(
     Box<dyn std::error::Error>,
 > {
     let sys = System::new_all();
-    let amem = sys.total_memory();
+    let amem = sys.total_memory() / 2; // Preload half of the avaliable memory with geometries.
 
     let sql = format!(
         "SELECT ST_AsWKB(ST_Transform(geom, 'EPSG:4326', 'EPSG:3857')) FROM lines_with_geom ORDER BY area DESC LIMIT {}",
@@ -536,8 +532,7 @@ fn render_cell_to_table(
                             })
                         })
                         .flatten()
-                        .filter(|(_, rel)| *rel >= 0.53)
-                        .max_by(|a, b| a.partial_cmp(b).unwrap())
+                        .find(|(_, rel)| *rel >= 0.53)
                         .unwrap_or_default();
                     result
                 })

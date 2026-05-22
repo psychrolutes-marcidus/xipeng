@@ -296,7 +296,8 @@ pub fn triangle_pair_to_polygon(
             rectangle.1.triangle.dimensions()
         ),
         (Dimensions::TwoDimensional, Dimensions::TwoDimensional),
-        "input triangles should not be degenerate"
+        "input triangles should not be degenerate: {:?}",
+        rectangle
     );
     debug_assert!(
         rectangle

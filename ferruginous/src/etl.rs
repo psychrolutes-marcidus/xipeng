@@ -116,7 +116,9 @@ impl VScalar for ExtractTrajectories {
 
         let result: Vec<_> = from_point
             .zip(to_point)
-            .map(|(from, to)| dist(from, to, 1000_f64) && time_dist(from, to, 60_f64))
+            .map(|(from, to)| {
+                dist(from, to, 1000_f64) && time_dist(from, to, 60_f64) && !dist(from, to, 0.01_f64)
+            })
             .collect();
         let mut out = output.flat_vector();
         out.copy(&result);
