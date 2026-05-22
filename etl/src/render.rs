@@ -77,7 +77,7 @@ CREATE TEMP TABLE IF NOT EXISTS draught_nulls_by_ship_type AS (
   FROM vessel_attributes.draught_nulls_by_ship_type
 );",
     )?;
-    let query_start = "CREATE TEMP TABLE trajs AS (
+    let query_start = "CREATE OR REPLACE VIEW trajs AS (
       SELECT
         ap.mmsi,
         ap.timestamp,
@@ -102,7 +102,7 @@ CREATE TEMP TABLE IF NOT EXISTS draught_nulls_by_ship_type AS (
     tx.execute_batch(&query)?;
 
     tx.execute_batch(
-        "CREATE TEMP TABLE lines AS (
+        "CREATE OR REPLACE VIEW lines AS (
   SELECT
     ap.mmsi,
     ap.timestamp,
@@ -124,12 +124,6 @@ CREATE TEMP TABLE IF NOT EXISTS draught_nulls_by_ship_type AS (
             ap.timestamp
         )
       )
-      AND LEAD (ap.mmsi) OVER (
-        PARTITION BY mmsi
-        ORDER BY
-          ap.mmsi,
-          ap.timestamp
-      ) = ap.mmsi
       AND (
         LEAD (ap.point) OVER (
           PARTITION BY
@@ -198,7 +192,8 @@ CREATE TEMP TABLE IF NOT EXISTS draught_nulls_by_ship_type AS (
       ELSE ST_Point (ap.point.lon, ap.point.lat)
     END as geom,
     dimensions,
-    ap.draught
+    ap.draught,
+    ST_Area(geom) as area
   FROM
     lines ap
     LEFT JOIN draught_dist_mmsi_normal cbm ON ap.mmsi = cbm.mmsi
@@ -241,7 +236,7 @@ fn search_tile(
     y: i32,
     z: i32,
 ) {
-    let wkb_row = manager.query_row("SELECT ST_AsWKB(ST_Transform(geom, 'EPSG:4326', 'EPSG:3857', always_xy := true)) FROM lines_with_geom WHERE ST_Intersects(ST_Transform(ST_TileEnvelope(?, ?, ?), 'EPSG:3857', 'EPSG:4326', always_xy := true), geom) ORDER BY ST_Area(geom) DESC LIMIT 1", [z, x, y], |row| row.get::<_, Vec<u8>>(0)).optional().unwrap();
+    let wkb_row = manager.query_row("SELECT ST_AsWKB(ST_Transform(geom, 'EPSG:4326', 'EPSG:3857', always_xy := true)) FROM lines_with_geom WHERE ST_Intersects(ST_Transform(ST_TileEnvelope(?, ?, ?), 'EPSG:3857', 'EPSG:4326', always_xy := true), geom) LIMIT 1", [z, x, y], |row| row.get::<_, Vec<u8>>(0)).optional().unwrap();
     match wkb_row {
         Some(w) => {
             let mut index = index.write().expect("Could not get write lock");
@@ -297,7 +292,7 @@ fn get_index(
     Box<dyn std::error::Error>,
 > {
     let mut stmt = con.prepare(
-        "SELECT ST_AsWKB(ST_Transform(geom, 'EPSG:4326', 'EPSG:3857')) FROM lines_with_geom ORDER BY ST_Area(geom) DESC LIMIT 10000",
+        "SELECT ST_AsWKB(ST_Transform(geom, 'EPSG:4326', 'EPSG:3857')) FROM lines_with_geom ORDER BY area DESC LIMIT 100000",
     )?;
     let (aabbs, geoms): (Vec<_>, Vec<_>) = stmt
         .query_map([], |row| row.get::<_, Vec<u8>>(0))?

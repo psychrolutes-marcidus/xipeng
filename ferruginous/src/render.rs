@@ -1,5 +1,6 @@
 use std::error::Error;
 
+use algorithms::cell::judweight_vessel;
 use chrono::DateTime;
 use duckdb::{
     Connection,
@@ -19,7 +20,10 @@ use tilerizer::{
 use wkb::writer;
 
 pub fn extension_entrypoint(con: &Connection) -> Result<(), Box<dyn Error>> {
-    con.register_scalar_function::<RenderGeom>("render_geom")?;
+    let state = RenderGeomState {
+        weights: judweight_vessel(),
+    };
+    con.register_scalar_function_with_state::<RenderGeom>("render_geom", &state)?;
     con.register_scalar_function::<Polyganize>("polyganize")?;
     Ok(())
 }
@@ -31,13 +35,18 @@ enum RenderMethod {
     Point(PointM<4326>),
 }
 
+#[derive(Clone)]
+struct RenderGeomState {
+    weights: [f32; 6],
+}
+
 struct RenderGeom;
 
 impl VScalar for RenderGeom {
-    type State = ();
+    type State = RenderGeomState;
 
     unsafe fn invoke(
-        _state: &Self::State,
+        state: &Self::State,
         input: &mut duckdb::core::DataChunkHandle,
         output: &mut dyn duckdb::vtab::arrow::WritableVector,
     ) -> Result<(), Box<dyn std::error::Error>> {
@@ -199,7 +208,7 @@ impl VScalar for RenderGeom {
                 return Some((d_mmsi, d_type, nulls, r_sq));
             });
 
-        let weights = algorithms::cell::judweight_vessel();
+        let weights = state.weights;
         // Here the actual computation starts
 
         let data = from_point
