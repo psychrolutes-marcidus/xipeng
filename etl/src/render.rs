@@ -532,7 +532,7 @@ fn render_cell_to_table(
                             })
                         })
                         .flatten()
-                        .find(|(_, rel)| *rel >= 0.53)
+                        .find(|(_, rel)| *rel >= params.threshold)
                         .unwrap_or_default();
                     result
                 })

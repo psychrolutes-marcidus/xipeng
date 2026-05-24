@@ -65,7 +65,7 @@ struct RenderCell {
     tile_start: String,
     tile_end: Option<String>,
     level: i32,
-    sample_level: i32,
+    threshold: f32,
 }
 
 fn main() {
