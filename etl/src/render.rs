@@ -65,15 +65,15 @@ pub fn setup_rendering(
     params: &RenderCell,
 ) -> Result<(), Box<dyn std::error::Error>> {
     tx.execute_batch(
-        "CREATE TEMP TABLE IF NOT EXISTS draught_dist_mmsi_normal AS (
+        "CREATE TABLE IF NOT EXISTS draught_dist_mmsi_normal AS (
   SELECT *
   FROM render.draught_dist_mmsi_normal
 );
-CREATE TEMP TABLE IF NOT EXISTS draught_dist_vessel_type_normal AS (
+CREATE TABLE IF NOT EXISTS draught_dist_vessel_type_normal AS (
   SELECT *
   FROM render.draught_dist_vessel_type_normal
 );
-CREATE TEMP TABLE IF NOT EXISTS draught_nulls_by_ship_type AS (
+CREATE TABLE IF NOT EXISTS draught_nulls_by_ship_type AS (
   SELECT *
   FROM vessel_attributes.draught_nulls_by_ship_type
 );",
