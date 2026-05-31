@@ -354,7 +354,7 @@ impl VScalar for RenderGeom {
     }
 }
 
-fn mul_arr_sum<const N: usize>(a: [f32; N], b: [f32; N]) -> f32 {
+pub fn mul_arr_sum<const N: usize>(a: [f32; N], b: [f32; N]) -> f32 {
     a.iter().zip(b.iter()).map(|(&a, &b)| a * b).sum()
 }
 

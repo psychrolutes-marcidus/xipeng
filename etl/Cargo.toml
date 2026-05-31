@@ -16,6 +16,9 @@ wkb = { workspace = true }
 geo-traits = { workspace = true }
 algorithms = { workspace = true }
 rstar = { workspace = true }
+cached = { workspace = true }
+fafo = { workspace = true }
+modeling = { workspace = true }
 
 [lints]
 workspace = true

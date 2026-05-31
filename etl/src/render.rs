@@ -1,16 +1,29 @@
 use std::cmp;
 use std::ops::Not;
 use std::sync::{Arc, Mutex, RwLock};
+use std::time::Duration;
 
-use algorithms::cell::{gravity_model, st_tileenvelope};
+use algorithms::cell::{gravity_model, judweight_vessel, st_tileenvelope};
+use cached::TtlCache;
+use cached::macros::cached;
 use duckdb::{Config, Connection, DuckdbConnectionManager, OptionalExt};
 use duckdb::{Statement, params};
-use geo::{Centroid, Geometry, Intersects, Point, algorithm};
+use fafo::util::ground_truth_to_cell_centroid_geodesic;
+use fafo::xyzcell::Cell;
+use fafo::{
+    ErrorMeasurementConf, cells_relative_coverage_by_polygon,
+    line_error_relative_to_perfect_and_centroid,
+};
+use geo::{Centroid, Coord, Geometry, Intersects, Point, algorithm};
 use geo_traits::GeometryTrait;
 use geo_traits::to_geo::{
     ToGeoGeometry, ToGeoGeometryCollection, ToGeoLine, ToGeoLineString, ToGeoMultiLineString,
     ToGeoMultiPoint, ToGeoMultiPolygon, ToGeoPoint, ToGeoPolygon, ToGeoRect, ToGeoTriangle,
 };
+use linesonmaps::types::coordm::CoordM;
+use linesonmaps::types::linem::LineM;
+use linesonmaps::types::pointm::PointM;
+use modeling::modeling::line_to_triangle_pair;
 use r2d2::ManageConnection;
 use rayon::prelude::*;
 use rstar::primitives::{GeomWithData, Rectangle};
@@ -18,6 +31,36 @@ use rstar::{Envelope, RTree, RTreeObject};
 use sysinfo::System;
 
 use crate::RenderCell;
+
+#[derive(Debug, Clone, Copy)]
+struct DbPoint {
+    pub lon: f32,
+    pub lat: f32,
+    pub time: f32,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct DbDimensions {
+    pub a: f32,
+    pub b: f32,
+    pub c: f32,
+    pub d: f32,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct DbParameters {
+    pub draught_dist_mmsi: f32,
+    pub draught_dist_type: f32,
+    pub draught_nulls: f32,
+    pub r_squared: f32,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct DbTile {
+    pub x: i32,
+    pub y: i32,
+    pub z: i32,
+}
 
 const EXTENSION_QUERY: &str = "LOAD '/home/rasmus/Projekter/xipeng/ferruginous/build/release/ferruginous.duckdb_extension'; LOAD spatial; SET geometry_always_xy = true;";
 
@@ -169,13 +212,6 @@ CREATE TABLE IF NOT EXISTS draught_nulls_by_ship_type AS (
     ap.timestamp,
     ap.point,
     ap.next_point,
-    median_draught,
-    {
-      'draught_dist_mmsi': cbv.score_norm::float,
-      'draught_dist_type': cbm.score_norm::float,
-      'draughts_null': dnull.draughts_null::float,
-      'r_squared': lr.r_squared::float
-    } as parameters,
     CASE
       WHEN ap.next_point IS NOT NULL
       AND dimensions IS NOT NULL
@@ -190,16 +226,10 @@ CREATE TABLE IF NOT EXISTS draught_nulls_by_ship_type AS (
     END as geom,
     dimensions,
     ap.draught,
+    ap.ship_type,
     ST_Area(geom) as area
   FROM
     lines ap
-    LEFT JOIN draught_dist_mmsi_normal cbm ON ap.mmsi = cbm.mmsi
-    AND ap.draught = cbm.draught
-    LEFT JOIN draught_dist_vessel_type_normal cbv ON ap.mmsi= cbv.mmsi
-    AND ap.draught = cbv.draught
-    LEFT JOIN draught_nulls_by_ship_type dnull ON ap.ship_type = dnull.ship_type
-    LEFT JOIN vessel_stats.linear_regression lr ON ap.ship_type = lr.ship_type
-    LEFT JOIN vessel_stats.std_draught sd ON ap.mmsi = sd.mmsi
     WHERE (SELECT true FROM cand_cells WHERE ST_Intersects(cellgeom, geom) LIMIT 1)
 );
 
@@ -233,7 +263,7 @@ fn search_tile(
     y: i32,
     z: i32,
 ) {
-    let wkb_row = manager.query_row("SELECT ST_AsWKB(ST_Transform(geom, 'EPSG:4326', 'EPSG:3857', always_xy := true)) FROM lines_with_geom WHERE ST_Intersects(ST_Transform(ST_TileEnvelope(?, ?, ?), 'EPSG:3857', 'EPSG:4326', always_xy := true), geom) ORDER BY area DESC LIMIT 1", [z, x, y], |row| row.get::<_, Vec<u8>>(0)).optional().unwrap();
+    let wkb_row = manager.query_row("SELECT ST_AsWKB(ST_Transform(geom, 'EPSG:4326', 'EPSG:3857', always_xy := true)) FROM lines_with_geom WHERE ST_Intersects(ST_Transform(ST_TileEnvelope(?, ?, ?), 'EPSG:3857', 'EPSG:4326', always_xy := true), geom) ORDER BY area DESC LIMIT 1", [z, x, y], |row| (row.get::<_, Vec<u8>>(0))).optional().unwrap();
     match wkb_row {
         Some(w) => {
             let mut index = index.write().expect("Could not get write lock");
@@ -354,6 +384,258 @@ fn get_index(
     Ok((index, geoms))
 }
 
+type RenderTuple = Vec<(
+    i32,
+    String,
+    f32,
+    CoordM,
+    Option<CoordM>,
+    Option<DbDimensions>,
+)>;
+#[cached(
+    ty = "TtlCache<String, (RenderTuple, Vec<Geometry>, rstar::RTree<GeomWithData<Rectangle<Point>, usize>>)>",
+    create = "{ TtlCache::with_ttl_and_refresh(Duration::from_mins(5), true) }",
+    convert = r#"{ format!("{},{},{}", x, y, z) }"#,
+    sync_writes = "by_key"
+)]
+fn get_cell_data(
+    con: &Connection,
+    x: i32,
+    y: i32,
+    z: i32,
+) -> (
+    RenderTuple,
+    Vec<Geometry>,
+    rstar::RTree<GeomWithData<Rectangle<Point>, usize>>,
+) {
+    let mut stmt = con
+        .prepare_cached(
+            "WITH data_filtered AS materialized
+    (SELECT *
+     FROM lines_with_geom
+     WHERE draught IS NOT NULL
+         AND st_intersects(st_transform(st_tileenvelope(?, ?, ?), 'EPSG:3857', 'EPSG:4326'), geom))
+SELECT mmsi,
+       ship_type,
+       draught::float,
+       point.lon::DOUBLE,
+       point.lat::DOUBLE,
+       point.time,
+       next_point.lon::DOUBLE,
+       next_point.lat::DOUBLE,
+       next_point.time,
+       dimensions.to_bow,
+       dimensions.to_starboard,
+       dimensions.to_stern,
+       dimensions.to_port,
+       ST_Transform(geom, 'EPSG:4326', 'EPSG:3857') as geom
+FROM data_filtered;",
+        )
+        .expect("Should not fail");
+    let data: Vec<_> = stmt
+        .query_map([z, x, y], |row| {
+            Ok((
+                row.get::<_, i32>(0).unwrap(),
+                row.get::<_, String>(1).unwrap(),
+                row.get::<_, f32>(2).unwrap(),
+                CoordM::<4326> {
+                    x: row.get::<_, f64>(3).unwrap(),
+                    y: row.get::<_, f64>(4).unwrap(),
+                    m: row.get::<_, f64>(5).unwrap(),
+                },
+                row.get::<_, f64>(6)
+                    .ok()
+                    .zip(row.get::<_, f64>(7).ok())
+                    .zip(row.get::<_, f64>(8).ok())
+                    .map(|((lon, lat), time)| CoordM::<4326> {
+                        x: lon,
+                        y: lat,
+                        m: time,
+                    }),
+                row.get::<_, f32>(9)
+                    .ok()
+                    .zip(row.get::<_, f32>(10).ok())
+                    .zip(row.get::<_, f32>(11).ok())
+                    .zip(row.get::<_, f32>(12).ok())
+                    .map(|(((a, b), c), d)| DbDimensions { a, b, c, d }),
+                row.get::<_, Vec<u8>>(13).unwrap(),
+            ))
+        })
+        .unwrap()
+        .map(|x| x.expect("Remove all those results"))
+        .collect();
+
+    let (rect, geom): (Vec<_>, Vec<_>) = data
+        .iter()
+        .map(|x| &x.6)
+        .enumerate()
+        .map(|(i, bin)| {
+            let geom = wkb::reader::read_wkb(&bin).expect("Malformed wkb");
+            let (rect, geom) = match geom.as_type() {
+                geo_traits::GeometryType::Point(p) => (
+                    RectIdx::new(
+                        rstar::primitives::Rectangle::from_aabb(p.to_point().envelope()),
+                        i,
+                    ),
+                    p.to_geometry(),
+                ),
+                geo_traits::GeometryType::LineString(ls) => (
+                    RectIdx::new(
+                        rstar::primitives::Rectangle::from_aabb(ls.to_line_string().envelope()),
+                        i,
+                    ),
+                    ls.to_geometry(),
+                ),
+                geo_traits::GeometryType::Polygon(p) => (
+                    RectIdx::new(
+                        rstar::primitives::Rectangle::from_aabb(p.to_polygon().envelope()),
+                        i,
+                    ),
+                    p.to_geometry(),
+                ),
+                geo_traits::GeometryType::MultiPolygon(mp) => (
+                    RectIdx::new(
+                        rstar::primitives::Rectangle::from_aabb(mp.to_multi_polygon().envelope()),
+                        i,
+                    ),
+                    mp.to_geometry(),
+                ),
+                geo_traits::GeometryType::Triangle(t) => (
+                    RectIdx::new(
+                        rstar::primitives::Rectangle::from_aabb(t.to_triangle().envelope()),
+                        i,
+                    ),
+                    t.to_geometry(),
+                ),
+                geo_traits::GeometryType::Line(l) => (
+                    RectIdx::new(
+                        rstar::primitives::Rectangle::from_aabb(l.to_line().envelope()),
+                        i,
+                    ),
+                    l.to_geometry(),
+                ),
+                _ => unimplemented!(),
+            };
+            (rect, geom)
+        })
+        .unzip();
+
+    let index = rstar::RTree::bulk_load(rect);
+
+    (
+        data.iter()
+            .map(|(mmsi, stype, draught, point, next_point, dimensions, _)| {
+                (
+                    *mmsi,
+                    stype.clone(),
+                    *draught,
+                    *point,
+                    *next_point,
+                    *dimensions,
+                )
+            })
+            .collect::<Vec<_>>(),
+        geom,
+        index,
+    )
+}
+
+#[cached(
+    ty = "TtlCache<String, Option<f32>>",
+    create = "{ TtlCache::with_ttl_and_refresh(Duration::from_mins(5), true) }",
+    convert = r#"{ format!("{}{}", mmsi, draught) }"#,
+    sync_writes = "by_key"
+)]
+fn get_draught_dist_vessel_type_normal(con: &Connection, mmsi: i32, draught: f32) -> Option<f32> {
+    let mut stmt = con
+        .prepare_cached(
+            "SELECT score_norm FROM draught_dist_vessel_type_normal WHERE mmsi = ? AND draught = ? AND draught IS NOT NULL",
+        )
+        .expect("Could not prepare statement");
+
+    stmt.query_one(params![mmsi, draught], |row| row.get::<_, f32>(0))
+        .optional()
+        .expect("query went wrong")
+}
+
+#[cached(
+    ty = "TtlCache<String, Option<f32>>",
+    create = "{ TtlCache::with_ttl_and_refresh(Duration::from_mins(5), true) }",
+    convert = r#"{ format!("{}{}", mmsi, draught) }"#,
+    sync_writes = "by_key"
+)]
+fn get_draught_dist_mmsi_normal(con: &Connection, mmsi: i32, draught: f32) -> Option<f32> {
+    let mut stmt = con.prepare_cached("SELECT score_norm FROM draught_dist_mmsi_normal WHERE mmsi = ? AND draught = ? AND draught IS NOT NULL").expect("Could not prepare statement");
+    stmt.query_one(params![mmsi, draught], |row| row.get::<_, f32>(0))
+        .optional()
+        .expect("query went wrong")
+}
+
+#[cached(
+    ty = "TtlCache<String, Option<f32>>",
+    create = "{ TtlCache::with_ttl_and_refresh(Duration::from_mins(5), true) }",
+    convert = r#"{ format!("{}", vessel_type) }"#,
+    sync_writes = "by_key"
+)]
+fn get_linear_regression(con: &Connection, vessel_type: &str) -> Option<f32> {
+    let mut stmt = con
+        .prepare_cached("SELECT r_squared FROM vessel_stats.linear_regression WHERE ship_type = ?")
+        .expect("Could not prepare statement");
+
+    stmt.query_one([vessel_type], |row| row.get::<_, f32>(0))
+        .optional()
+        .expect("query went wrong")
+}
+
+#[cached(
+    ty = "TtlCache<i32, Option<f32>>",
+    create = "{ TtlCache::with_ttl_and_refresh(Duration::from_mins(5), true) }",
+    convert = r#"{ mmsi }"#,
+    sync_writes = "by_key"
+)]
+fn get_std_draught(con: &Connection, mmsi: i32) -> Option<f32> {
+    let mut stmt = con
+        .prepare_cached("SELECT median_draught FROM vessel_stats.std_draught WHERE mmsi = ?")
+        .expect("Could not prepare statement");
+    stmt.query_one([mmsi], |row| row.get::<_, f32>(0))
+        .optional()
+        .expect("query went wrong")
+}
+
+#[cached(
+    ty = "TtlCache<String, Option<f32>>",
+    create = "{ TtlCache::with_ttl_and_refresh(Duration::from_mins(5), true) }",
+    convert = r#"{ format!("{}", vessel_type) }"#,
+    sync_writes = "by_key"
+)]
+fn get_draught_nulls_by_ship_type(con: &Connection, vessel_type: &str) -> Option<f32> {
+    let mut stmt = con
+        .prepare_cached("SELECT draughts_null FROM draught_nulls_by_ship_type WHERE ship_type = ?")
+        .expect("Could not prepare statement");
+    stmt.query_one([vessel_type], |row| row.get::<_, f32>(0))
+        .optional()
+        .expect("query went wrong")
+}
+
+fn request_cell(con: &Connection, x: i32, y: i32, z: i32, z_limit: i32) -> RenderTuple {
+    let diff = z - z_limit;
+    let qx = x >> diff;
+    let qy = y >> diff;
+    let (items, geoms, rtree) = get_cell_data(con, qx, qy, z_limit);
+
+    let tile = st_tileenvelope(z as u32, x, y);
+    let inter_items = rtree
+        .locate_in_envelope_intersecting(&tile.envelope())
+        .filter_map(|x| match geoms[x.data].intersects(&tile) {
+            true => Some(x.data),
+            false => None,
+        })
+        .map(|x| items[x].to_owned())
+        .collect();
+
+    inter_items
+}
+
 pub fn get_candidate_cells(
     manager: Connection,
     params: &RenderCell,
@@ -465,6 +747,66 @@ pub fn get_candidate_cells(
     Ok(cells)
 }
 
+fn dist_normal(dist: f32) -> f32 {
+    (1. - dist / 500.).clamp(0., 1.)
+}
+
+fn render_geom(
+    point: CoordM,
+    next_point: Option<CoordM>,
+    dimensions: Option<DbDimensions>,
+    tile: DbTile,
+) -> (f32, f32) {
+    let new_cell = Cell::from((tile.x, tile.y, tile.z as u32));
+    let cell_iter = || std::iter::repeat_n(new_cell, 1);
+    let conf = ErrorMeasurementConf::builder()
+        .method(fafo::ErrorMeasurementMethod::Geodesic)
+        .zoom(tile.z as u8)
+        .build();
+    if let Some(next_point) = next_point {
+        let dist = conf
+            .cell_distance_to_ground_truth((point.into(), next_point.into()), cell_iter())
+            .iter()
+            .map(|x| x.1)
+            .last()
+            .unwrap_or_default();
+        let line = LineM::from((point, next_point));
+        if let Some(dim) = dimensions {
+            let (tri1, tri2) = line_to_triangle_pair(
+                &line,
+                dim.a as f64,
+                dim.b as f64,
+                dim.c as f64,
+                dim.d as f64,
+            );
+            let cov = cells_relative_coverage_by_polygon((&tri1, &tri2), cell_iter())
+                .last()
+                .map(|x| x.1)
+                .unwrap_or_default();
+            return (cov as f32, dist_normal(dist as f32));
+        }
+        let cov = line_error_relative_to_perfect_and_centroid(
+            (point.into(), next_point.into()),
+            cell_iter(),
+        )
+        .iter()
+        .map(|x| x.1)
+        .last()
+        .unwrap_or_default();
+        return (cov as f32, dist_normal(dist as f32));
+    }
+    let dist = ground_truth_to_cell_centroid_geodesic(PointM::from(point), &new_cell);
+    return (0., dist_normal(dist as f32));
+}
+
+fn score_cell(params: [f32; 6]) -> f32 {
+    let weights = judweight_vessel();
+    mul_arr_sum(params, weights)
+}
+
+fn mul_arr_sum<const N: usize>(a: [f32; N], b: [f32; N]) -> f32 {
+    a.iter().zip(b.iter()).map(|(&a, &b)| a * b).sum()
+}
 fn render_cell_to_table(
     con: &Connection,
     cells: &[(i32, i32)],
@@ -486,54 +828,66 @@ fn render_cell_to_table(
         .map(|x| {
             let con = con.lock().unwrap().try_clone().unwrap();
             con.execute_batch(EXTENSION_QUERY).unwrap();
-            let mut stmt = con.prepare(query).unwrap();
+            // let mut stmt = con.prepare(query).unwrap();
 
             let something: Vec<_> = x
                 .iter()
                 .map(|(x, y)| {
-                    let stuff: Vec<_> = stmt
-                        .query_map(
-                            params![
-                                *x as u32,
-                                *y as u32,
-                                params.level as u8,
-                                params.level,
-                                *x,
-                                *y
-                            ],
-                            |row| {
-                                Ok((
-                                    row.get::<_, f32>(0),
-                                    row.get::<_, f32>(1),
-                                    row.get::<_, f32>(2),
-                                ))
-                            },
-                        )
-                        .unwrap()
-                        .flatten()
-                        .map(|x| {
-                            x.0.ok()
-                                .zip(x.1.ok())
-                                .zip(x.2.ok())
-                                .map(|((draught, score), med)| (score, draught, med))
-                        })
-                        .flatten()
-                        .collect();
-                    let result = stuff
+                    let data = request_cell(&con, *x, *y, params.level, params.level - 4);
+                    let params_s: Vec<_> = data
                         .iter()
-                        .map(|left| {
-                            stuff.iter().map(|right| {
-                                (
-                                    left.1,
-                                    gravity_model(
-                                        left.0, left.1, left.2, right.0, right.1, right.2,
-                                    ),
-                                )
+                        .map(|(mmsi, ship_type, draught, _, _, _)| {
+                            (
+                                get_draught_dist_mmsi_normal(&con, *mmsi, *draught),
+                                get_draught_dist_vessel_type_normal(&con, *mmsi, *draught),
+                                get_draught_nulls_by_ship_type(&con, ship_type),
+                                get_linear_regression(&con, ship_type),
+                            )
+                        })
+                        .map(|x| {
+                            x.0.zip(x.1).zip(x.2).zip(x.3).map(
+                                |(((dist_mmsi, dist_vessel), nulls), r_sq)| {
+                                    (dist_mmsi, dist_vessel, nulls, r_sq)
+                                },
+                            )
+                        })
+                        .collect();
+                    let mut draught_score: Vec<_> = data
+                        .iter()
+                        .map(|(_, _, draught, point, next_point, dims)| {
+                            (
+                                draught,
+                                render_geom(
+                                    *point,
+                                    *next_point,
+                                    *dims,
+                                    DbTile {
+                                        x: *x,
+                                        y: *y,
+                                        z: params.level,
+                                    },
+                                ),
+                            )
+                        })
+                        .zip(params_s.iter())
+                        .map(|((draught, (cov, dist)), (param))| match param {
+                            Some(p) => (*draught, score_cell([p.0, p.1, p.2, p.3, cov, dist])),
+                            None => (*draught, 0.),
+                        })
+                        .collect();
+                    draught_score.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap().reverse());
+
+                    let result = draught_score
+                        .iter()
+                        .map(|(left)| {
+                            draught_score.iter().map(|(right)| {
+                                (left.0, gravity_model(left.1, left.0, right.1, right.0))
                             })
                         })
                         .flatten()
-                        .find(|(_, rel)| *rel >= params.threshold)
+                        .find(|x| x.1 >= params.threshold)
                         .unwrap_or_default();
+
                     result
                 })
                 .collect();

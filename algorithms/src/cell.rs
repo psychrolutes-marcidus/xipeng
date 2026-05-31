@@ -1,5 +1,5 @@
 use approx::AbsDiffEq;
-use cached::proc_macro::once;
+use cached::macros::once;
 use std::{
     f64::consts::PI,
     ops::{Div, Sub},
@@ -88,14 +88,7 @@ where
     (num - bounds.min) / (bounds.max - bounds.min)
 }
 
-pub fn gravity_model(
-    rel_m: f32,
-    draught_m: f32,
-    dev_m: f32,
-    rel_o: f32,
-    draught_o: f32,
-    dev_o: f32,
-) -> f32 {
+pub fn gravity_model(rel_m: f32, draught_m: f32, rel_o: f32, draught_o: f32) -> f32 {
     let diff = draught_m - draught_o;
     let rel = rel_m * rel_o;
     if rel > 1.1 {
@@ -103,9 +96,6 @@ pub fn gravity_model(
         dbg!(&rel_o);
     }
     assert!(rel <= 1.1);
-    let dr_m = draught_dev(draught_m, dev_m);
-    let dr_o = draught_dev(draught_o, dev_o);
-    let _dev = dr_m * dr_o;
     let n = diff;
     // if diff < 1. {
     //     (rel) / (dev)
@@ -175,6 +165,12 @@ mod tests {
 
         let result = result_source * vec[0] + result_age * vec[1];
         assert_eq!(result, 0.);
+    }
+
+    #[test]
+    fn check_eigen_root() {
+        judweight_vessel();
+        assert!(false)
     }
 
     // It is a good idea to make tests
