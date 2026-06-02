@@ -244,13 +244,12 @@ fn normal_asserter(x: f32) -> f32 {
     x
 }
 
+// Don't use
 fn combine_cell(draught: [f32; 2], score: [f32; 2], deviation: [f32; 2]) -> f32 {
     gravity_model(
         normal_asserter(score[0]),
         draught[0],
         deviation[0],
         normal_asserter(score[1]),
-        draught[1],
-        deviation[1],
     )
 }
