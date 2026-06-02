@@ -23,20 +23,20 @@ const CIRCUMFERENCE: f64 = 2. * PI * RADIUS;
 #[once]
 pub fn judweight_vessel() -> [f32; 6] {
     let eig_val = vector![0., 1., 2., 3., 4., 5.];
-    let a12 = 2.;
+    let a12 = 3.;
     let a13 = 5.;
-    let a14 = 1.;
-    let a15 = 3.;
-    let a16 = 2.;
-    let a23 = 3.;
-    let a24 = 1. / 2.;
-    let a25 = 2.;
-    let a26 = 2.;
-    let a34 = 1. / 3.;
-    let a35 = 1.;
-    let a36 = 1.;
-    let a45 = 1. / 3.;
-    let a46 = 1. / 3.;
+    let a14 = 6.;
+    let a15 = 7.;
+    let a16 = 8.;
+    let a23 = 1. / 2.;
+    let a24 = 1. / 4.;
+    let a25 = 3.;
+    let a26 = 1.;
+    let a34 = 1.;
+    let a35 = 3.;
+    let a36 = 3.;
+    let a45 = 3.;
+    let a46 = 3.;
     let a56 = 2.;
 
     let mat = matrix![1., a12, a13, a14, a15, a16; 1./a12, 1., a23, a24, a25, a26; 1./a13, 1./a23, 1., a34, a35, a36; 1./a14, 1./a24, 1./a34, 1., a45, a46; 1./a15, 1./a25, 1./a35, 1./a45, 1., a56; 1./a16, 1./a26, 1./a36, 1./a46, 1./a56, 1. ];

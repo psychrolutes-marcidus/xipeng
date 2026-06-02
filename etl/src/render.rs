@@ -1,33 +1,30 @@
-use std::cmp;
-use std::ops::Not;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
 use algorithms::cell::{gravity_model, judweight_vessel, st_tileenvelope};
 use cached::TtlCache;
 use cached::macros::cached;
-use duckdb::{Config, Connection, DuckdbConnectionManager, OptionalExt};
-use duckdb::{Statement, params};
+use duckdb::params;
+use duckdb::{Config, Connection, OptionalExt};
 use fafo::util::ground_truth_to_cell_centroid_geodesic;
 use fafo::xyzcell::Cell;
 use fafo::{
     ErrorMeasurementConf, cells_relative_coverage_by_polygon,
     line_error_relative_to_perfect_and_centroid,
 };
-use geo::{Centroid, Coord, Geometry, Intersects, Point, algorithm};
+use geo::{Geometry, Intersects, Point};
 use geo_traits::GeometryTrait;
 use geo_traits::to_geo::{
-    ToGeoGeometry, ToGeoGeometryCollection, ToGeoLine, ToGeoLineString, ToGeoMultiLineString,
-    ToGeoMultiPoint, ToGeoMultiPolygon, ToGeoPoint, ToGeoPolygon, ToGeoRect, ToGeoTriangle,
+    ToGeoGeometry, ToGeoLine, ToGeoLineString, ToGeoMultiPolygon, ToGeoPoint, ToGeoPolygon,
+    ToGeoTriangle,
 };
 use linesonmaps::types::coordm::CoordM;
 use linesonmaps::types::linem::LineM;
 use linesonmaps::types::pointm::PointM;
 use modeling::modeling::line_to_triangle_pair;
-use r2d2::ManageConnection;
 use rayon::prelude::*;
 use rstar::primitives::{GeomWithData, Rectangle};
-use rstar::{Envelope, RTree, RTreeObject};
+use rstar::{RTree, RTreeObject};
 use sysinfo::System;
 
 use crate::RenderCell;
@@ -816,12 +813,10 @@ fn render_cell_to_table(
         con.try_clone().expect("Could not clone connection"),
     ));
 
-    let chunks_size = std::cmp::max(cells.len() / 16, 2048);
+    let sys = System::new_all();
+    let thread_count = sys.cpus().len();
 
-    let query = "SELECT draught::float, render_geom(point, next_point, dimensions, {'x': ?, 'y': ?, 'level': ?}, parameters) as score, median_draught 
-     FROM lines_with_geom b
-     WHERE ST_Intersects(ST_Transform(ST_TileEnvelope(?, ?, ?), 'EPSG:3857', 'EPSG:4326', always_xy := true), geom)
-     ORDER BY draught, score DESC;";
+    let chunks_size = std::cmp::max(cells.len() / (thread_count * 16), 2048);
 
     let result: Vec<_> = cells
         .par_chunks(chunks_size)
