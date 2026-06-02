@@ -870,7 +870,9 @@ fn render_cell_to_table(
                             None => (*draught, 0.),
                         })
                         .collect();
-                    draught_score.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap().reverse());
+                    draught_score.sort_unstable_by(|a, b| {
+                        a.0.total_cmp(&b.0).then(a.1.total_cmp(&b.1)).reverse()
+                    });
 
                     let result = draught_score
                         .iter()
