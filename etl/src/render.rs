@@ -865,19 +865,18 @@ fn render_cell_to_table(
                             )
                         })
                         .zip(params_s.iter())
-                        .map(|((draught, (cov, dist)), (param))| match param {
+                        .map(|((draught, (cov, dist)), param)| match param {
                             Some(p) => (*draught, score_cell([p.0, p.1, p.2, p.3, cov, dist])),
                             None => (*draught, 0.),
                         })
                         .collect();
-                    draught_score.sort_unstable_by(|a, b| {
-                        a.0.total_cmp(&b.0).then(a.1.total_cmp(&b.1)).reverse()
-                    });
+                    draught_score.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap().reverse());
 
                     let result = draught_score
                         .iter()
-                        .map(|(left)| {
-                            draught_score.iter().map(|(right)| {
+                        .enumerate()
+                        .map(|(i, left)| {
+                            draught_score[i..draught_score.len()].iter().map(|right| {
                                 (left.0, gravity_model(left.1, left.0, right.1, right.0))
                             })
                         })
