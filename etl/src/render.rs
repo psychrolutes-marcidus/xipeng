@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
@@ -308,6 +309,10 @@ fn search_tile(
 
 fn get_index(
     con: &Connection,
+    x: i32,
+    y: i32,
+    z: i32,
+    limit: i64,
 ) -> Result<
     (
         rstar::RTree<GeomWithData<Rectangle<Point>, usize>>,
@@ -315,12 +320,13 @@ fn get_index(
     ),
     Box<dyn std::error::Error>,
 > {
-    let sys = System::new_all();
-    let amem = sys.total_memory() / 2; // Preload half of the avaliable memory with geometries.
-
     let sql = format!(
-        "SELECT ST_AsWKB(ST_Transform(geom, 'EPSG:4326', 'EPSG:3857')) FROM lines_with_geom ORDER BY area DESC LIMIT {}",
-        amem / 64
+        "SELECT st_aswkb(st_transform(a.geom, 'EPSG:4326', 'EPSG:3857'))
+FROM lines_with_geom a
+WHERE st_intersects(st_transform(st_tileenvelope({}, {}, {}), 'EPSG:3857', 'EPSG:4326'), a.geom)
+ORDER BY area DESC
+LIMIT {}",
+        z, x, y, limit
     );
     let mut stmt = con.prepare(&sql)?;
     let (aabbs, geoms): (Vec<_>, Vec<_>) = stmt
@@ -405,6 +411,8 @@ fn get_cell_data(
     Vec<Geometry>,
     rstar::RTree<GeomWithData<Rectangle<Point>, usize>>,
 ) {
+    con.execute_batch(EXTENSION_QUERY)
+        .expect("Should not happen");
     let mut stmt = con
         .prepare_cached(
             "WITH data_filtered AS materialized
@@ -637,11 +645,7 @@ pub fn get_candidate_cells(
     manager: Connection,
     params: &RenderCell,
 ) -> Result<Vec<(i32, i32)>, Box<dyn std::error::Error>> {
-    let (index, geoms) = get_index(&manager)?;
-    assert_ne!(geoms.len(), 0);
-    let index = Arc::new(RwLock::new(index));
-    let geoms = Arc::new(RwLock::new(geoms));
-    let a_manager = Arc::new(Mutex::new(manager));
+    // let a_manager = Arc::new(Mutex::new(manager));
     let parser = |x: &String| {
         x.split(",")
             .flat_map(|x| x.parse::<i32>())
@@ -668,65 +672,65 @@ pub fn get_candidate_cells(
 
     let tile_end: Vec<_> = parser(&params.tile_end.clone().unwrap_or(params.tile_start.clone()));
 
-    let mut cells: Vec<(i32, i32)> = (tile_start[0]..=tile_end[0])
+    let mut cells: VecDeque<(i32, i32, i32)> = (tile_start[0]..=tile_end[0])
         .map(|x| {
             (tile_start[1]..=tile_end[1])
                 .zip(std::iter::repeat(x))
-                .map(|(y, x)| (x, y))
+                .map(|(y, x)| (x, y, tile_start[2]))
         })
         .flatten()
         .collect();
 
-    for i in tile_start[2]..=params.level {
-        let increase = i < params.level;
+    let mut result = Vec::new();
+    let sys = System::new_all();
+    let limit = sys.total_memory() / 128;
 
-        cells = cells
-            .par_iter()
-            .map(|x| {
-                rayon::iter::repeat_n((x, increase as u32), 4_usize.pow(increase as u32))
-                    .enumerate()
-                    .map(|(i, (x, inc))| {
-                        (
-                            x.0 * 2_i32.pow(inc) + (i as i32) / 2,
-                            x.1 * 2_i32.pow(inc) + (i as i32) % 2,
-                        )
-                    })
-            })
-            .flatten()
-            .map(|point| {
-                let index_ref = index.read().expect("Could not read lock");
-                let tile = st_tileenvelope(i as u32 + increase as u32, point.0, point.1);
-                let mut inter = index_ref.locate_in_envelope_intersecting(&tile.envelope());
-                let any_geom = inter.any(|x| {
-                    geoms.read().expect("Could not get read lock")[x.data].intersects(&tile)
-                });
-                (point, any_geom)
-            })
-            .filter(|(point, any_geom)| {
-                if !any_geom {
-                    let manager_lock = a_manager.lock().expect("Could not lock connection");
-                    let manager = manager_lock.try_clone().expect("Could not clone");
-                    drop(manager_lock);
-                    manager.execute_batch(EXTENSION_QUERY).expect("Fuck CuckDB");
-                    let tile = st_tileenvelope(i as u32 + increase as u32, point.0, point.1);
-                    search_tile(
-                        index.clone(),
-                        geoms.clone(),
-                        &manager,
-                        point.0,
-                        point.1,
-                        i + increase as i32,
-                    );
-                    let read_index = index.read().expect("Could not read");
-                    let read_geoms = geoms.read().expect("Could not read");
-                    let mut inter = read_index.locate_in_envelope_intersecting(&tile.envelope());
-                    return inter.any(|x| read_geoms[x.data].intersects(&tile));
-                }
-                *any_geom
-            })
-            .map(|(point, _)| point)
-            .collect();
-        println!("Level: {}, Cells: {}", i, cells.len());
+    dbg!(&limit);
+    while let Some(cell) = cells.pop_front() {
+        let (index, geoms) = get_index(&manager, cell.0, cell.1, cell.2, limit as i64)
+            .expect("Could not receive index");
+        dbg!(&geoms.len());
+        let index = Arc::new(index);
+        let geoms = Arc::new(geoms);
+        let mut cells_inner = vec![cell];
+
+        for level_i in cell.2..=params.level {
+            let increase = level_i < params.level;
+
+            let (cell_inside, cell_outside): (Vec<_>, Vec<_>) = cells_inner
+                .par_iter()
+                .map(|x| {
+                    rayon::iter::repeat_n((x, increase as u32), 4_usize.pow(increase as u32))
+                        .enumerate()
+                        .map(|(i, (x, inc))| {
+                            (
+                                x.0 * 2_i32.pow(inc) + (i as i32) / 2,
+                                x.1 * 2_i32.pow(inc) + (i as i32) % 2,
+                                x.2 + inc as i32,
+                            )
+                        })
+                })
+                .flatten()
+                .map(|point| {
+                    let tile = st_tileenvelope(level_i as u32 + increase as u32, point.0, point.1);
+                    let mut inter = index.locate_in_envelope_intersecting(&tile.envelope());
+                    let any_geom = inter.any(|x| geoms[x.data].intersects(&tile));
+                    if !any_geom {
+                        if geoms.len() as u64 == limit {
+                            return (None, Some(point));
+                        }
+                        return (None, None);
+                    }
+                    (Some(point), None)
+                })
+                .unzip();
+            cells_inner = cell_inside.par_iter().flatten().copied().collect();
+            cells.par_extend(cell_outside.par_iter().flatten());
+            println!("Level: {}, Cells: {}", level_i, cells_inner.len());
+            if level_i == params.level {
+                result.extend(cells_inner.iter().map(|(x, y, _)| (*x, *y)));
+            }
+        }
     }
 
     //.map(|x| x.0.ok().zip(x.1.ok()).zip(x.2.okdraughtmapscorex| medle (draught, score, medt candidates: Vec<_> = cells
@@ -741,7 +745,7 @@ pub fn get_candidate_cells(
     //     .filter(|x| x.2 != 0)
     //     .map(|(x, y, _)| (x, y))
     //     .collect();
-    Ok(cells)
+    Ok(result)
 }
 
 fn dist_normal(dist: f32) -> f32 {
@@ -816,80 +820,70 @@ fn render_cell_to_table(
     let sys = System::new_all();
     let thread_count = sys.cpus().len();
 
-    let chunks_size = std::cmp::max(cells.len() / (thread_count * 16), 2048);
+    // let chunks_size = std::cmp::max(cells.len() / (thread_count * 16), 2048);
 
     let result: Vec<_> = cells
-        .par_chunks(chunks_size)
-        .map(|x| {
+        .par_iter()
+        .map(|(x, y)| {
             let con = con.lock().unwrap().try_clone().unwrap();
-            con.execute_batch(EXTENSION_QUERY).unwrap();
-            // let mut stmt = con.prepare(query).unwrap();
-
-            let something: Vec<_> = x
+            let data = request_cell(&con, *x, *y, params.level, params.level - 5);
+            let params_s: Vec<_> = data
                 .iter()
-                .map(|(x, y)| {
-                    let data = request_cell(&con, *x, *y, params.level, params.level - 4);
-                    let params_s: Vec<_> = data
-                        .iter()
-                        .map(|(mmsi, ship_type, draught, _, _, _)| {
-                            (
-                                get_draught_dist_mmsi_normal(&con, *mmsi, *draught),
-                                get_draught_dist_vessel_type_normal(&con, *mmsi, *draught),
-                                get_draught_nulls_by_ship_type(&con, ship_type),
-                                get_linear_regression(&con, ship_type),
-                            )
-                        })
-                        .map(|x| {
-                            x.0.zip(x.1).zip(x.2).zip(x.3).map(
-                                |(((dist_mmsi, dist_vessel), nulls), r_sq)| {
-                                    (dist_mmsi, dist_vessel, nulls, r_sq)
-                                },
-                            )
-                        })
-                        .collect();
-                    let mut draught_score: Vec<_> = data
-                        .iter()
-                        .map(|(_, _, draught, point, next_point, dims)| {
-                            (
-                                draught,
-                                render_geom(
-                                    *point,
-                                    *next_point,
-                                    *dims,
-                                    DbTile {
-                                        x: *x,
-                                        y: *y,
-                                        z: params.level,
-                                    },
-                                ),
-                            )
-                        })
-                        .zip(params_s.iter())
-                        .map(|((draught, (cov, dist)), param)| match param {
-                            Some(p) => (*draught, score_cell([p.0, p.1, p.2, p.3, cov, dist])),
-                            None => (*draught, 0.),
-                        })
-                        .collect();
-                    draught_score.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap().reverse());
-
-                    let result = draught_score
-                        .iter()
-                        .enumerate()
-                        .map(|(i, left)| {
-                            draught_score[i..draught_score.len()].iter().map(|right| {
-                                (left.0, gravity_model(left.1, left.0, right.1, right.0))
-                            })
-                        })
-                        .flatten()
-                        .find(|x| x.1 >= params.threshold)
-                        .unwrap_or_default();
-
-                    result
+                .map(|(mmsi, ship_type, draught, _, _, _)| {
+                    (
+                        get_draught_dist_mmsi_normal(&con, *mmsi, *draught),
+                        get_draught_dist_vessel_type_normal(&con, *mmsi, *draught),
+                        get_draught_nulls_by_ship_type(&con, ship_type),
+                        get_linear_regression(&con, ship_type),
+                    )
+                })
+                .map(|x| {
+                    x.0.zip(x.1).zip(x.2).zip(x.3).map(
+                        |(((dist_mmsi, dist_vessel), nulls), r_sq)| {
+                            (dist_mmsi, dist_vessel, nulls, r_sq)
+                        },
+                    )
                 })
                 .collect();
-            something
+            let mut draught_score: Vec<_> = data
+                .iter()
+                .map(|(_, _, draught, point, next_point, dims)| {
+                    (
+                        draught,
+                        render_geom(
+                            *point,
+                            *next_point,
+                            *dims,
+                            DbTile {
+                                x: *x,
+                                y: *y,
+                                z: params.level,
+                            },
+                        ),
+                    )
+                })
+                .zip(params_s.iter())
+                .map(|((draught, (cov, dist)), param)| match param {
+                    Some(p) => (*draught, score_cell([p.0, p.1, p.2, p.3, cov, dist])),
+                    None => (*draught, 0.),
+                })
+                .collect();
+            draught_score.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap().reverse());
+
+            let result = draught_score
+                .iter()
+                .enumerate()
+                .map(|(i, left)| {
+                    draught_score[i..draught_score.len()]
+                        .iter()
+                        .map(|right| (left.0, gravity_model(left.1, left.0, right.1, right.0)))
+                })
+                .flatten()
+                .find(|x| x.1 >= params.threshold)
+                .unwrap_or_default();
+
+            result
         })
-        .flatten()
         .collect();
 
     // con.execute_batch(
