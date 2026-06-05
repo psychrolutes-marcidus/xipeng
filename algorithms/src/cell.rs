@@ -97,7 +97,7 @@ pub fn gravity_model(rel_m: f32, draught_m: f32, rel_o: f32, draught_o: f32) -> 
         dbg!(&rel_o);
     }
     assert!(rel <= 1.1);
-    let n = diff;
+    let n = diff.powi(2);
     // if diff < 1. {
     //     (rel) / (dev)
     // } else if diff < 2. {
