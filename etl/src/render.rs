@@ -864,7 +864,7 @@ fn render_cell_to_table(
                 })
                 .zip(params_s.iter())
                 .map(|((draught, (cov, dist)), param)| match param {
-                    Some(p) => (*draught, score_cell([p.0, p.1, p.2, p.3, cov, dist])),
+                    Some(p) => (*draught, score_cell([p.1, p.2, dist, cov, p.0, p.3])),
                     None => (*draught, 0.),
                 })
                 .collect();
