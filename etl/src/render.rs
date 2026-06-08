@@ -325,7 +325,7 @@ fn get_index(
     let sql = format!(
         "SELECT st_aswkb(st_transform(a.geom, 'EPSG:4326', 'EPSG:3857'))
 FROM lines_with_geom a
-WHERE ST_Intersects(st_transform(st_tileenvelope({}, {}, {}), 'EPSG:3857', 'EPSG:4326'), a.geom, 0)
+WHERE ST_Intersects(st_transform(st_tileenvelope({}, {}, {}), 'EPSG:3857', 'EPSG:4326'), a.geom)
 LIMIT {}",
         z, x, y, limit
     );
