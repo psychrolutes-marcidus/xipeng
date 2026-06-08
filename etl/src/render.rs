@@ -385,15 +385,6 @@ LIMIT {}",
         })
         .unzip();
 
-    dbg!(
-        geoms
-            .iter()
-            .map(|x| std::mem::size_of_val(x))
-            .fold(0, |acc, x| acc + x)
-    );
-    dbg!(std::mem::size_of_val(&geoms));
-    dbg!(std::mem::size_of_val(&geoms) / limit as usize);
-
     let index = rstar::RTree::bulk_load(aabbs);
     Ok((index, geoms))
 }
