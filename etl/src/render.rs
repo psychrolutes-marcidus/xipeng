@@ -192,6 +192,8 @@ CREATE OR REPLACE TABLE draught_nulls_by_ship_type AS (
 );
 ",
     )?;
+    let sys = System::new_all();
+    let threads = sys.cpus().len();
 
     println!("Polygonise lines");
 
@@ -231,11 +233,11 @@ CREATE OR REPLACE TABLE draught_nulls_by_ship_type AS (
     WHERE (SELECT true FROM cand_cells WHERE ST_Intersects(cellgeom, geom) LIMIT 1)
 );
 
-CREATE INDEX geom_idx ON lines_with_geom USING RTREE (geom)";
+-- CREATE OR REPLACE INDEX geom_idx ON lines_with_geom USING RTREE (geom) WITH (max_node_capacity = 255)";
     let sql = format!("LOAD spatial;
 SET
   geometry_always_xy = TRUE;
-CREATE OR REPLACE TABLE lines_with_geom AS (
+CREATE TABLE IF NOT EXISTS lines_with_geom AS (
   WITH cand_cells AS MATERIALIZED (
 SELECT
               xt.* as x,
@@ -323,7 +325,7 @@ fn get_index(
     let sql = format!(
         "SELECT st_aswkb(st_transform(a.geom, 'EPSG:4326', 'EPSG:3857'))
 FROM lines_with_geom a
-WHERE st_intersects(st_transform(st_tileenvelope({}, {}, {}), 'EPSG:3857', 'EPSG:4326'), a.geom)
+WHERE ST_DWithin(st_transform(st_tileenvelope({}, {}, {}), 'EPSG:3857', 'EPSG:4326'), a.geom, 0)
 ORDER BY area DESC
 LIMIT {}",
         z, x, y, limit
@@ -382,6 +384,15 @@ LIMIT {}",
             }
         })
         .unzip();
+
+    dbg!(
+        geoms
+            .iter()
+            .map(|x| std::mem::size_of_val(x))
+            .fold(0, |acc, x| acc + x)
+    );
+    dbg!(std::mem::size_of_val(&geoms));
+    dbg!(std::mem::size_of_val(&geoms) / limit as usize);
 
     let index = rstar::RTree::bulk_load(aabbs);
     Ok((index, geoms))
@@ -672,7 +683,7 @@ pub fn get_candidate_cells(
 
     let tile_end: Vec<_> = parser(&params.tile_end.clone().unwrap_or(params.tile_start.clone()));
 
-    let mut cells: VecDeque<(i32, i32, i32)> = (tile_start[0]..=tile_end[0])
+    let mut cells: Vec<(i32, i32, i32)> = (tile_start[0]..=tile_end[0])
         .map(|x| {
             (tile_start[1]..=tile_end[1])
                 .zip(std::iter::repeat(x))
@@ -683,10 +694,10 @@ pub fn get_candidate_cells(
 
     let mut result = Vec::new();
     let sys = System::new_all();
-    let limit = sys.total_memory() / 128;
+    let limit = sys.total_memory() / 2048;
 
     dbg!(&limit);
-    while let Some(cell) = cells.pop_front() {
+    while let Some(cell) = cells.pop() {
         let (index, geoms) = get_index(&manager, cell.0, cell.1, cell.2, limit as i64)
             .expect("Could not receive index");
         dbg!(&geoms.len());
