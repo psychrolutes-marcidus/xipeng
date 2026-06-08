@@ -325,8 +325,7 @@ fn get_index(
     let sql = format!(
         "SELECT st_aswkb(st_transform(a.geom, 'EPSG:4326', 'EPSG:3857'))
 FROM lines_with_geom a
-WHERE ST_DWithin(st_transform(st_tileenvelope({}, {}, {}), 'EPSG:3857', 'EPSG:4326'), a.geom, 0)
-ORDER BY area DESC
+WHERE ST_Intersects(st_transform(st_tileenvelope({}, {}, {}), 'EPSG:3857', 'EPSG:4326'), a.geom, 0)
 LIMIT {}",
         z, x, y, limit
     );
@@ -685,7 +684,7 @@ pub fn get_candidate_cells(
 
     let mut result = Vec::new();
     let sys = System::new_all();
-    let limit = sys.total_memory() / 2048;
+    let limit = sys.total_memory() / 4096;
 
     dbg!(&limit);
     while let Some(cell) = cells.pop() {
@@ -726,8 +725,8 @@ pub fn get_candidate_cells(
                     (Some(point), None)
                 })
                 .unzip();
-            cells_inner = cell_inside.par_iter().flatten().copied().collect();
-            cells.par_extend(cell_outside.par_iter().flatten());
+            cells_inner = cell_inside.into_iter().flatten().collect();
+            cells.extend(cell_outside.iter().flatten());
             println!("Level: {}, Cells: {}", level_i, cells_inner.len());
             if level_i == params.level {
                 result.extend(cells_inner.iter().map(|(x, y, _)| (*x, *y)));
