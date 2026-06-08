@@ -685,8 +685,11 @@ pub fn get_candidate_cells(
     let mut result = Vec::new();
     let sys = System::new_all();
     let limit = sys.total_memory() / 4096;
+    let mut total = cells.len();
+    let mut current = 0;
 
     dbg!(&limit);
+    println!("progress: 0%");
     while let Some(cell) = cells.pop() {
         let (index, geoms) = get_index(&manager, cell.0, cell.1, cell.2, limit as i64)
             .expect("Could not receive index");
@@ -726,12 +729,14 @@ pub fn get_candidate_cells(
                 })
                 .unzip();
             cells_inner = cell_inside.into_iter().flatten().collect();
+            total = total + cell_outside.iter().flatten().count();
             cells.extend(cell_outside.iter().flatten());
-            println!("Level: {}, Cells: {}", level_i, cells_inner.len());
             if level_i == params.level {
                 result.extend(cells_inner.iter().map(|(x, y, _)| (*x, *y)));
             }
         }
+        current += 1;
+        println!("progress: {}%", current as f32 / total as f32);
     }
 
     //.map(|x| x.0.ok().zip(x.1.ok()).zip(x.2.okdraughtmapscorex| medle (draught, score, medt candidates: Vec<_> = cells
