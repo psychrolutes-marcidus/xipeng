@@ -326,14 +326,18 @@ fn get_index(
     let sql = format!(
         "SELECT st_aswkb(st_transform(a.geom, 'EPSG:4326', 'EPSG:3857'))
 FROM lines_with_geom a
-WHERE ST_Intersects_Extent(st_transform(st_tileenvelope({}, {}, {}), 'EPSG:3857', 'EPSG:4326'), a.geom)
+WHERE ST_Intersects(st_transform(st_tileenvelope({}, {}, {}), 'EPSG:3857', 'EPSG:4326'), a.geom)
 LIMIT {}",
         z, x, y, limit
     );
     let mut stmt = con.prepare(&sql)?;
-    let (aabbs, geoms): (Vec<_>, Vec<_>) = stmt
+    let wkbs: Vec<_> = stmt
         .query_map([], |row| row.get::<_, Vec<u8>>(0))?
         .map(|x| x.unwrap())
+        .collect();
+
+    let (aabbs, geoms): (Vec<_>, Vec<_>) = wkbs
+        .par_iter()
         .enumerate()
         .map(|(i, geom)| {
             let geom = wkb::reader::read_wkb(&geom).expect("Malformed wkb");
@@ -384,6 +388,7 @@ LIMIT {}",
             }
         })
         .unzip();
+    drop(wkbs);
     let mut count = geoms.len() as i64;
     if count == limit {
         count = con
