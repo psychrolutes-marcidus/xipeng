@@ -233,7 +233,7 @@ CREATE OR REPLACE TABLE draught_nulls_by_ship_type AS (
     WHERE (SELECT true FROM cand_cells WHERE ST_Intersects(cellgeom, geom) LIMIT 1)
 );
 
---CREATE INDEX geom_idx ON lines_with_geom USING RTREE (geom)";
+-- CREATE INDEX geom_idx ON lines_with_geom USING RTREE (geom)";
     let sql = format!("LOAD spatial;
 SET
   geometry_always_xy = TRUE;
@@ -326,7 +326,7 @@ fn get_index(
     let sql = format!(
         "SELECT st_aswkb(st_transform(a.geom, 'EPSG:4326', 'EPSG:3857'))
 FROM lines_with_geom a
-WHERE ST_DWithin(st_transform(st_tileenvelope({}, {}, {}), 'EPSG:3857', 'EPSG:4326'), a.geom, 0)
+WHERE ST_Intersects_Extent(st_transform(st_tileenvelope({}, {}, {}), 'EPSG:3857', 'EPSG:4326'), a.geom)
 LIMIT {}",
         z, x, y, limit
     );
