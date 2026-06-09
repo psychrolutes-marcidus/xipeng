@@ -233,7 +233,7 @@ CREATE OR REPLACE TABLE draught_nulls_by_ship_type AS (
     WHERE (SELECT true FROM cand_cells WHERE ST_Intersects(cellgeom, geom) LIMIT 1)
 );
 
--- CREATE OR REPLACE INDEX geom_idx ON lines_with_geom USING RTREE (geom) WITH (max_node_capacity = 255)";
+--CREATE INDEX geom_idx ON lines_with_geom USING RTREE (geom)";
     let sql = format!("LOAD spatial;
 SET
   geometry_always_xy = TRUE;
@@ -319,6 +319,7 @@ fn get_index(
     (
         rstar::RTree<GeomWithData<Rectangle<Point>, usize>>,
         Vec<Geometry>,
+        i64,
     ),
     Box<dyn std::error::Error>,
 > {
@@ -383,9 +384,21 @@ LIMIT {}",
             }
         })
         .unzip();
+    let mut count = geoms.len() as i64;
+    if count == limit {
+        count = con
+            .query_row(
+                "SELECT count(*)
+FROM lines_with_geom a
+WHERE ST_Intersects(st_transform(st_tileenvelope(?, ?, ?), 'EPSG:3857', 'EPSG:4326'), a.geom)",
+                [z, x, y],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("Could not get count");
+    }
 
     let index = rstar::RTree::bulk_load(aabbs);
-    Ok((index, geoms))
+    Ok((index, geoms, count))
 }
 
 type RenderTuple = Vec<(
@@ -691,8 +704,9 @@ pub fn get_candidate_cells(
     dbg!(&limit);
     println!("progress: 0%");
     while let Some(cell) = cells.pop() {
-        let (index, geoms) = get_index(&manager, cell.0, cell.1, cell.2, limit as i64)
+        let (index, geoms, count) = get_index(&manager, cell.0, cell.1, cell.2, limit as i64)
             .expect("Could not receive index");
+        let ratio = count / limit as i64 + 1;
         dbg!(&geoms.len());
         let index = Arc::new(index);
         let geoms = Arc::new(geoms);
@@ -718,12 +732,21 @@ pub fn get_candidate_cells(
                 .map(|point| {
                     let tile = st_tileenvelope(level_i as u32 + increase as u32, point.0, point.1);
                     let mut inter = index.locate_in_envelope_intersecting(&tile.envelope());
+                    let mut counter = 0;
+                    if count >= limit as i64 {
+                        counter = index
+                            .locate_in_envelope_intersecting(&tile.envelope())
+                            .count() as i64;
+                    }
                     let any_geom = inter.any(|x| geoms[x.data].intersects(&tile));
                     if !any_geom {
                         if geoms.len() as u64 == limit {
                             return (None, Some(point));
                         }
                         return (None, None);
+                    }
+                    if counter * ratio <= limit as i64 && geoms.len() as u64 == limit {
+                        return (None, Some(point));
                     }
                     (Some(point), None)
                 })
