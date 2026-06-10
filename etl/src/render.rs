@@ -702,7 +702,7 @@ pub fn get_candidate_cells(
 
     let mut result = Vec::new();
     let sys = System::new_all();
-    let limit = sys.total_memory() / 4096;
+    let limit = sys.total_memory() / 8192;
     let mut total = cells.len();
     let mut current = 0;
 
