@@ -233,11 +233,11 @@ CREATE OR REPLACE TABLE draught_nulls_by_ship_type AS (
     WHERE (SELECT true FROM cand_cells WHERE ST_Intersects(cellgeom, geom) LIMIT 1)
 );
 
--- CREATE INDEX geom_idx ON lines_with_geom USING RTREE (geom)";
+CREATE INDEX geom_idx ON lines_with_geom USING RTREE (geom)";
     let sql = format!("LOAD spatial;
 SET
   geometry_always_xy = TRUE;
-CREATE TABLE IF NOT EXISTS lines_with_geom AS (
+CREATE OR REPLACE TABLE lines_with_geom AS (
   WITH cand_cells AS MATERIALIZED (
 SELECT
               xt.* as x,

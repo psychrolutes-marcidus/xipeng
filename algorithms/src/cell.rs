@@ -170,7 +170,8 @@ mod tests {
 
     #[test]
     fn check_eigen_root() {
-        judweight_vessel();
+        let weight = judweight_vessel();
+        dbg!(&weight);
         assert!(false)
     }
 
