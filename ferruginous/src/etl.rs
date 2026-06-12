@@ -3,6 +3,8 @@ use algorithms::cell::judweight_depth;
 use algorithms::cell::relative_to_bounds;
 use geo::Distance;
 use itertools::izip;
+use linesonmaps::algo::segmenter::segment_timestamp;
+use linesonmaps::types::coordm::CoordM;
 use linesonmaps::types::pointm::PointM;
 use std::error::Error;
 
@@ -58,7 +60,7 @@ impl VScalar for DDMReliability {
                     relative_to_bounds(age_bounds, y as f64),
                 )
             })
-            .map(|(s, y)| weight[0] * s + (weight[1] * y).max(0.).min(1.))
+            .map(|(s, y)| weight[0] as f64 * s + (weight[1] as f64 * y).max(0.).min(1.))
             .collect();
 
         let mut out = output.flat_vector();
@@ -114,7 +116,9 @@ impl VScalar for ExtractTrajectories {
 
         let result: Vec<_> = from_point
             .zip(to_point)
-            .map(|(from, to)| dist(from, to, 1000_f64) && time_dist(from, to, 60_f64))
+            .map(|(from, to)| {
+                dist(from, to, 1000_f64) && time_dist(from, to, 60_f64) && !dist(from, to, 0.01_f64)
+            })
             .collect();
         let mut out = output.flat_vector();
         out.copy(&result);

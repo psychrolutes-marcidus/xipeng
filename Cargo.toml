@@ -34,7 +34,7 @@ pgrx = "=0.16.1"
 tilerizer = { path = "tilerizer" }
 serde = "1.0.228"
 rayon = "1.11.0"
-duckdb = { version = "1.10500.0", features = ["bundled", "modern-full"]}
+duckdb = { version = "1.10503.0", features = ["bundled", "modern-full", "r2d2"]}
 rust_decimal = "1.40.0"
 clap = { version = "4.5.60", features = ["derive"] }
 thiserror = "2.0.18"
@@ -43,5 +43,9 @@ geo = "0.31.0"
 itertools = "0.14.0"
 fafo = { path = "fafo" }
 algorithms = { path = "algorithms" }
-cached = "0.59.0"
+cached = {version = "1.1.0", features = ["time_stores", "ahash"] }
 approx = "0.5.1"
+wkb = "0.9.2"
+r2d2 = "0.8.10"
+rstar = "0.12.2"
+geo-traits = "0.3.0"
